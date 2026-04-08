@@ -1,0 +1,27 @@
+{% extends "layout.njk" %}
+
+{% block title %}Sign In — E4E Roster{% endblock %}
+
+{% block body %}
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-header">
+      <div class="auth-logo">E4E</div>
+      <h1>Roster</h1>
+      <p>Engineers for Exploration &mdash; UCSD</p>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <a href="/auth/login" class="btn btn-primary btn-full">
+      Sign in with E4E SSO
+    </a>
+
+    <p class="auth-note">
+      Access is restricted to E4E members. Contact a lab admin if you need an account.
+    </p>
+  </div>
+</div>
+{% endblock %}

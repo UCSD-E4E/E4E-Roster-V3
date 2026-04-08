@@ -1,0 +1,15 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    volumes:
+      - ./backend/src:/app/src                 # hot reload on source changes
+      - ./backend/views:/app/views             # hot reload on template changes
+      - ./frontend/static:/app/public          # live static assets
+      - backend_node_modules:/app/node_modules # isolate container's node_modules
+    environment:
+      NODE_ENV: dev
+
+volumes:
+  backend_node_modules:

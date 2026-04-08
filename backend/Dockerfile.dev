@@ -1,0 +1,9 @@
+# Development image — source is mounted as a volume, not copied.
+# Nodemon + tsx watch for hot reload on file changes.
+FROM node:20-slim
+WORKDIR /app
+COPY backend/package*.json ./
+RUN npm install
+COPY backend/tsconfig.json ./
+EXPOSE 3000
+CMD ["npm", "run", "dev"]

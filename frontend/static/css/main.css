@@ -1,0 +1,194 @@
+/* E4E Roster — base styles */
+/* UCSD palette: navy #182B49, gold #C69214 */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --navy:   #182B49;
+  --gold:   #C69214;
+  --bg:     #F5F6F8;
+  --surface:#FFFFFF;
+  --text:   #1A1A2E;
+  --muted:  #6B7280;
+  --border: #E5E7EB;
+  --danger: #DC2626;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,.10), 0 1px 2px rgba(0,0,0,.06);
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+}
+
+a { color: var(--navy); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Buttons ─────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding: .55rem 1.25rem;
+  border: none;
+  border-radius: var(--radius);
+  font-size: .95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s, background .15s;
+  text-decoration: none;
+}
+.btn:hover { opacity: .88; text-decoration: none; }
+.btn-primary  { background: var(--navy); color: #fff; }
+.btn-secondary{ background: var(--border); color: var(--text); }
+.btn-ghost    { background: transparent; color: var(--muted); }
+.btn-sm       { padding: .3rem .8rem; font-size: .85rem; }
+.btn-full     { width: 100%; }
+
+/* ── Alerts ──────────────────────────────── */
+.alert {
+  padding: .75rem 1rem;
+  border-radius: var(--radius);
+  font-size: .9rem;
+  margin-bottom: 1rem;
+}
+.alert-error { background: #FEF2F2; color: var(--danger); border: 1px solid #FECACA; }
+
+/* ── Auth page ───────────────────────────── */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--navy);
+}
+
+.auth-card {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 2.5rem 2rem;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+
+.auth-header { text-align: center; margin-bottom: 2rem; }
+
+.auth-logo {
+  display: inline-block;
+  background: var(--navy);
+  color: var(--gold);
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  padding: .4rem .9rem;
+  border-radius: 6px;
+  margin-bottom: .75rem;
+}
+
+.auth-header h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.auth-header p {
+  color: var(--muted);
+  font-size: .875rem;
+  margin-top: .25rem;
+}
+
+.auth-note {
+  margin-top: 1.25rem;
+  font-size: .8rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ── App shell ───────────────────────────── */
+.app-header {
+  background: var(--navy);
+  color: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: var(--shadow);
+}
+
+.app-header-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: .02em;
+  color: #fff;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.app-nav a {
+  color: rgba(255,255,255,.8);
+  font-size: .9rem;
+}
+.app-nav a:hover { color: #fff; text-decoration: none; }
+
+.nav-user {
+  font-size: .9rem;
+  color: rgba(255,255,255,.7);
+}
+
+.app-main {
+  max-width: 1100px;
+  margin: 2.5rem auto;
+  padding: 0 1.5rem;
+}
+
+.app-main h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+/* ── Cards ───────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+.card h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: .4rem;
+  color: var(--navy);
+}
+
+.card p { margin-bottom: 1rem; }
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.75rem;
+}
+
+/* ── Utilities ───────────────────────────── */
+.text-muted { color: var(--muted); font-size: .9rem; }
