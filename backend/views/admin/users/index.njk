@@ -1,0 +1,14 @@
+{% extends "layout.njk" %}
+{% block title %}Users — Admin{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+    <div class="page-header">
+      <h2>Users</h2>
+      <a href="/admin/users/new" class="btn btn-primary">+ Add User</a>
+    </div>
+    <p class="text-muted">Roster DB not yet connected — user list coming soon.</p>
+  </main>
+</div>
+{% endblock %}

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "dotenv": "^16.4.5",
+    "ldapts": "^4.2.6",
     "express": "^4.19.2",
     "express-session": "^1.18.0",
     "nunjucks": "^3.2.4",
