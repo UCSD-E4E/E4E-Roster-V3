@@ -3,7 +3,11 @@
  * Docs: https://<your-host>/univention/udm/ (interactive API browser)
  */
 import crypto from 'crypto';
+import https from 'https';
 import { NewUser, ProvisionResult, SystemStatus } from './types';
+
+// rejectUnauthorized:false matches how Authentik connects to this server
+const tlsAgent = new https.Agent({ rejectUnauthorized: false });
 
 interface UdmObject {
   dn: string;
@@ -12,6 +16,16 @@ interface UdmObject {
 
 interface UdmCollection {
   _embedded?: { 'udm:object'?: UdmObject[] };
+}
+
+// Minimal Response-like wrapper returned by udmFetch
+interface UdmResponse {
+  status: number;
+  statusText: string;
+  ok: boolean;
+  headers: { get(name: string): string | null };
+  text(): Promise<string>;
+  json(): Promise<unknown>;
 }
 
 function baseUrl(): string {
@@ -25,16 +39,77 @@ function authHeader(): string {
   return `Basic ${creds}`;
 }
 
-async function udmFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  return fetch(`${baseUrl()}${path}`, {
-    ...options,
-    headers: {
-      Authorization: authHeader(),
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...(options.headers as Record<string, string>),
-    },
+function httpsRequest(
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: string,
+): Promise<UdmResponse> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const reqHeaders: Record<string, string> = { ...headers };
+    if (body) reqHeaders['Content-Length'] = Buffer.byteLength(body).toString();
+
+    const req = https.request(
+      {
+        hostname: parsed.hostname,
+        port: parseInt(parsed.port) || 443,
+        path: parsed.pathname + parsed.search,
+        method,
+        agent: tlsAgent,
+        headers: reqHeaders,
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', (chunk) => (raw += chunk));
+        res.on('end', () => {
+          const status = res.statusCode ?? 0;
+          const statusText = res.statusMessage ?? '';
+          const resHeaders = res.headers;
+          resolve({
+            status,
+            statusText,
+            ok: status >= 200 && status < 300,
+            headers: { get: (name) => (resHeaders[name.toLowerCase()] as string) ?? null },
+            text: () => Promise.resolve(raw),
+            json: () => Promise.resolve(JSON.parse(raw)),
+          });
+        });
+      },
+    );
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
   });
+}
+
+async function udmFetch(
+  path: string,
+  method = 'GET',
+  body?: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<UdmResponse> {
+  const headers: Record<string, string> = {
+    Authorization: authHeader(),
+    Accept: 'application/json',
+    ...extraHeaders,
+  };
+  if (body) headers['Content-Type'] = 'application/json';
+
+  const url = `${baseUrl()}${path}`;
+  console.log(`[udm] ${method} ${url}`);
+
+  const res = await httpsRequest(url, method, headers, body);
+
+  console.log(`[udm] response: ${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const text = await res.text();
+    console.log(`[udm] error body:`, text.slice(0, 500));
+    const captured = text;
+    return { ...res, text: () => Promise.resolve(captured), json: () => Promise.resolve(JSON.parse(captured)) };
+  }
+
+  return res;
 }
 
 function generateTempPassword(): string {
@@ -44,11 +119,9 @@ function generateTempPassword(): string {
 // ── Exported service functions ────────────────────────────────────
 
 export async function checkUser(username: string): Promise<SystemStatus> {
-  const res = await udmFetch(
-    `/users/user/?filter=${encodeURIComponent(`uid=${username}`)}`,
-  );
+  const res = await udmFetch(`/users/user/?filter=${encodeURIComponent(`uid=${username}`)}`);
   if (!res.ok) throw new Error(`UDM error ${res.status}: ${res.statusText}`);
-  const data: UdmCollection = await res.json();
+  const data = await res.json() as UdmCollection;
   const objects = data._embedded?.['udm:object'] ?? [];
   return {
     exists: objects.length > 0,
@@ -59,7 +132,7 @@ export async function checkUser(username: string): Promise<SystemStatus> {
 export async function listGroups(): Promise<string[]> {
   const res = await udmFetch('/groups/group/?properties=name&page_size=500');
   if (!res.ok) throw new Error(`UDM error ${res.status}: ${res.statusText}`);
-  const data: UdmCollection = await res.json();
+  const data = await res.json() as UdmCollection;
   return (data._embedded?.['udm:object'] ?? [])
     .map((g) => g.properties.name as string)
     .filter(Boolean)
@@ -67,29 +140,26 @@ export async function listGroups(): Promise<string[]> {
 }
 
 async function addToGroup(userDn: string, groupName: string): Promise<void> {
-  // Find the group
   const searchRes = await udmFetch(
     `/groups/group/?filter=${encodeURIComponent(`cn=${groupName}`)}&properties=users`,
   );
   if (!searchRes.ok) throw new Error(`Failed to find group "${groupName}": ${searchRes.statusText}`);
-  const searchData: UdmCollection = await searchRes.json();
+  const searchData = await searchRes.json() as UdmCollection;
   const group = searchData._embedded?.['udm:object']?.[0];
   if (!group) throw new Error(`Group "${groupName}" not found`);
 
   const currentMembers = (group.properties.users as string[]) ?? [];
-  if (currentMembers.includes(userDn)) return; // Already a member
+  if (currentMembers.includes(userDn)) return;
 
-  // Fetch the individual resource to get its ETag for the PATCH
   const getRes = await udmFetch(`/groups/group/${encodeURIComponent(group.dn)}`);
   const etag = getRes.headers.get('etag') ?? '*';
 
-  const patchRes = await udmFetch(`/groups/group/${encodeURIComponent(group.dn)}`, {
-    method: 'PATCH',
-    headers: { 'If-Match': etag },
-    body: JSON.stringify({
-      properties: { users: [...currentMembers, userDn] },
-    }),
-  });
+  const patchRes = await udmFetch(
+    `/groups/group/${encodeURIComponent(group.dn)}`,
+    'PATCH',
+    JSON.stringify({ properties: { users: [...currentMembers, userDn] } }),
+    { 'If-Match': etag },
+  );
   if (!patchRes.ok) {
     throw new Error(`Failed to add user to "${groupName}": ${patchRes.statusText}`);
   }
@@ -105,20 +175,25 @@ export async function createUser(
 
   const tempPassword = generateTempPassword();
   const position = process.env.UDM_USERS_POSITION!;
-
-  const res = await udmFetch('/users/user/', {
-    method: 'POST',
-    body: JSON.stringify({
+  const res = await udmFetch(
+    '/users/user/',
+    'POST',
+    JSON.stringify({
       properties: {
         username: user.username,
         firstname: user.firstName,
         lastname: user.lastName,
         password: tempPassword,
+        'e-mail': [user.email],
         mailPrimaryAddress: user.email,
+        unixhome: `/home/${user.username}`,
+        shell: '/bin/bash',
+        primaryGroup: process.env.UDM_PRIMARY_GROUP!,
+        userexpiry: user.expiryDate,
       },
       position,
     }),
-  });
+  );
 
   if (!res.ok) {
     let message = res.statusText;

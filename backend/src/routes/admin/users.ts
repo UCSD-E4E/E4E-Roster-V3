@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { requireAdmin } from '../../middleware/requireAdmin';
-import * as ldap from '../../services/ldap';
-import { NewUser, WizardState } from '../../services/types';
+import { generateUsername } from '../../services/ldap';
+import * as udm from '../../services/udm';
+import { NewUser } from '../../services/types';
 
 const router = Router();
 router.use(requireAdmin);
@@ -21,9 +22,9 @@ router.get('/new', async (req: Request, res: Response) => {
 
   let groups: string[] = [];
   try {
-    groups = await ldap.listGroups();
+    groups = await udm.listGroups();
   } catch (err) {
-    console.error('[admin] Failed to fetch LDAP groups:', err);
+    console.error('[admin] Failed to fetch groups from UDM:', err);
   }
 
   res.render('admin/users/new/step1', { groups });
@@ -39,7 +40,7 @@ router.post('/new/sso', async (req: Request, res: Response) => {
   const cleanLast = (lastName as string).trim();
 
   const user: NewUser = {
-    username: ldap.generateUsername(cleanFirst, cleanLast, cleanEmail),
+    username: generateUsername(cleanFirst, cleanLast, cleanEmail),
     firstName: cleanFirst,
     lastName: cleanLast,
     email: cleanEmail,
@@ -50,7 +51,7 @@ router.post('/new/sso', async (req: Request, res: Response) => {
     serverGroups: [],
   };
 
-  const result = await ldap.createUser(user);
+  const result = await udm.createUser(user);
 
   req.session.wizard = {
     user,
