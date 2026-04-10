@@ -1,0 +1,53 @@
+{% extends "layout.njk" %}
+{% block title %}SSO Account — Result{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+
+    <div class="wizard-header">
+      <h2>Add New User</h2>
+      <ol class="wizard-steps">
+        <li class="done">1. SSO Account</li>
+        <li class="active">2. GitHub &amp; Slack</li>
+        <li>3. Server Access</li>
+      </ol>
+    </div>
+
+    <div class="card" style="max-width:640px">
+      <h3>SSO Account — {{ result.status | upper }}</h3>
+
+      <div class="alert alert-{{ 'success' if result.status == 'success' else ('warn' if result.status == 'already_exists' else 'error') }}">
+        {{ result.message }}
+      </div>
+
+      {% if result.status == 'success' and result.tempPassword %}
+      <div class="alert alert-info">
+        <strong>Temporary password:</strong>
+        <code class="temp-password">{{ result.tempPassword }}</code><br>
+        <small>Share this securely with the user. They should change it on first login.</small>
+      </div>
+      {% endif %}
+
+      <table class="detail-table">
+        <tr><th>Username</th><td>{{ user.username }}</td></tr>
+        <tr><th>Name</th><td>{{ user.firstName }} {{ user.lastName }}</td></tr>
+        <tr><th>Email</th><td>{{ user.email }}</td></tr>
+        <tr><th>Role</th><td>{{ user.role }}</td></tr>
+        <tr><th>Account Expiry</th><td>{{ user.expiryDate }}</td></tr>
+        <tr><th>LDAP Groups</th><td>{{ user.ldapGroups | join(', ') or '—' }}</td></tr>
+      </table>
+
+      <div class="form-actions" style="margin-top:1.5rem">
+        {% if result.status != 'failed' %}
+        <a href="{{ nextUrl }}" class="btn btn-primary">Continue to GitHub &amp; Slack →</a>
+        {% else %}
+        <a href="/admin/users/new" class="btn btn-secondary">← Retry</a>
+        {% endif %}
+        <a href="/admin/users" class="btn btn-ghost">Back to Users</a>
+      </div>
+    </div>
+
+  </main>
+</div>
+{% endblock %}

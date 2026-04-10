@@ -1,0 +1,125 @@
+{% extends "layout.njk" %}
+{% block title %}New User — SSO Account{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+
+    <div class="wizard-header">
+      <h2>Add New User</h2>
+      <ol class="wizard-steps">
+        <li class="active">1. SSO Account</li>
+        <li>2. GitHub &amp; Slack</li>
+        <li>3. Server Access</li>
+      </ol>
+    </div>
+
+    <div class="card" style="max-width:640px">
+      <h3>Create SSO Account</h3>
+      <p class="text-muted" style="margin-bottom:1.5rem">
+        Creates the user in Univention LDAP. Authentik will sync the account automatically.
+      </p>
+
+      <form method="POST" action="/admin/users/new/sso">
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="firstName">First name</label>
+            <input type="text" id="firstName" name="firstName" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="lastName">Last name</label>
+            <input type="text" id="lastName" name="lastName" required autocomplete="off">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required autocomplete="off">
+          <span class="form-hint">Used to generate the username.</span>
+        </div>
+
+        <div class="form-group">
+          <label>Username <span class="text-muted">(auto-generated)</span></label>
+          <div class="username-preview" id="usernamePreview">—</div>
+          <span class="form-hint">Format: first initial . last name . 3-digit hash of email</span>
+        </div>
+
+        <div class="form-group">
+          <label for="expiryDate">Account expiry</label>
+          <input type="date" id="expiryDate" name="expiryDate" required>
+          <span class="form-hint">The user will not be able to log in after this date.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="role">Role</label>
+          <select id="role" name="role" required>
+            <option value="">— select —</option>
+            <option value="student">Student</option>
+            <option value="researcher">Researcher</option>
+            <option value="staff">Staff</option>
+            <option value="alumni">Alumni</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>LDAP Groups</label>
+          {% if groups.length %}
+          <div class="checkbox-grid">
+            {% for group in groups %}
+            <label class="checkbox-label">
+              <input type="checkbox" name="ldapGroups" value="{{ group }}"> {{ group }}
+            </label>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="form-hint">Could not fetch groups from LDAP — groups can be assigned after account creation.</p>
+          {% endif %}
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create SSO Account →</button>
+          <a href="/admin/users" class="btn btn-ghost">Cancel</a>
+        </div>
+
+      </form>
+    </div>
+  </main>
+</div>
+
+<script>
+  // Mirror of the server-side generateUsername logic
+  async function sha512digits(email) {
+    const msgBuffer = new TextEncoder().encode(email);
+    const hashBuffer = await crypto.subtle.digest('SHA-512', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    // BigInt mod 999
+    const digits = Number(BigInt('0x' + hashHex) % 999n);
+    return digits.toString().padStart(3, '0');
+  }
+
+  async function updatePreview() {
+    const first = document.getElementById('firstName').value.trim().replace(/[^a-zA-Z]/g, '');
+    const last  = document.getElementById('lastName').value.trim().replace(/[^a-zA-Z]/g, '');
+    const email = document.getElementById('email').value.trim().toLowerCase();
+    const preview = document.getElementById('usernamePreview');
+
+    if (!first || !last || !email.includes('@')) {
+      preview.textContent = '—';
+      return;
+    }
+    const digits = await sha512digits(email);
+    preview.textContent = `${first[0].toLowerCase()}.${last.toLowerCase()}.${digits}`;
+  }
+
+  ['firstName', 'lastName', 'email'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updatePreview);
+  });
+
+  // Default expiry to 3 months from today
+  const expiry = new Date();
+  expiry.setMonth(expiry.getMonth() + 3);
+  document.getElementById('expiryDate').value = expiry.toISOString().slice(0, 10);
+</script>
+{% endblock %}

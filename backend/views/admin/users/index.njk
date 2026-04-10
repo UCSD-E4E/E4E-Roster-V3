@@ -1,0 +1,100 @@
+{% extends "layout.njk" %}
+{% block title %}Users — Admin{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <h2>Users <span class="text-muted" style="font-size:1rem;font-weight:400">({{ totalCount }})</span></h2>
+      </div>
+      <div style="display:flex;gap:.5rem">
+        <button id="syncBtn" class="btn btn-secondary" onclick="triggerSync()">Sync from UDM</button>
+        <a href="/admin/users/new" class="btn btn-primary">+ Add User</a>
+      </div>
+    </div>
+
+    <div id="syncStatus" style="display:none;margin-bottom:1rem"></div>
+
+    {% if users.length %}
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Expiry</th>
+            <th>Groups</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr class="{{ 'row-disabled' if u.disabled }}">
+            <td><code>{{ u.username }}</code></td>
+            <td>{{ u.first_name }} {{ u.last_name }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.role or '—' }}</td>
+            <td>{{ u.expiry_date or 'No expiry' }}</td>
+            <td>
+              {% if u.ldap_groups and u.ldap_groups.length %}
+                <span class="group-tags">
+                  {% for g in u.ldap_groups %}
+                  <span class="tag">{{ g }}</span>
+                  {% endfor %}
+                </span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if u.disabled %}
+                <span class="badge badge-warn">Disabled</span>
+              {% else %}
+                <span class="badge badge-ok">Active</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="/admin/users/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit User</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted">No users in roster yet. Use <strong>Sync from UDM</strong> to populate, or add a user manually.</p>
+    {% endif %}
+
+  </main>
+</div>
+
+<script>
+async function triggerSync() {
+  const btn = document.getElementById('syncBtn');
+  const status = document.getElementById('syncStatus');
+  btn.disabled = true;
+  btn.textContent = 'Syncing…';
+  status.style.display = 'none';
+  try {
+    const res = await fetch('/admin/users/sync', { method: 'POST' });
+    const data = await res.json();
+    status.className = 'alert alert-' + (data.ok ? 'success' : 'error');
+    status.textContent = data.ok
+      ? `Sync complete — ${data.synced} users synced.`
+      : `Sync failed: ${data.message}`;
+    status.style.display = '';
+    if (data.ok) setTimeout(() => location.reload(), 1000);
+  } catch (e) {
+    status.className = 'alert alert-error';
+    status.textContent = 'Sync request failed.';
+    status.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sync from UDM';
+  }
+}
+</script>
+{% endblock %}
