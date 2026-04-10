@@ -14,7 +14,7 @@ router.get('/', async (_req: Request, res: Response) => {
   const { rows: users } = await db.query(
     `SELECT username, first_name, last_name, email, role,
             TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
-            disabled, ldap_groups, last_synced_at
+            disabled, ldap_groups, github_username, slack_username, last_synced_at
      FROM users
      ORDER BY last_name, first_name`,
   );
@@ -39,7 +39,7 @@ router.get('/:username/edit', async (req: Request, res: Response) => {
   const { rows } = await db.query(
     `SELECT username, first_name, last_name, email, role,
             TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
-            disabled, ldap_groups
+            disabled, ldap_groups, github_username, slack_username
      FROM users WHERE username = $1`,
     [username],
   );
@@ -57,7 +57,7 @@ router.get('/:username/edit', async (req: Request, res: Response) => {
 
 router.post('/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
-  const { role, expiryDate } = req.body as Record<string, string>;
+  const { role, expiryDate, githubUsername, slackUsername } = req.body as Record<string, string>;
   const selectedGroups: string[] = [req.body.groups ?? []].flat();
 
   // Update groups in UDM
@@ -76,7 +76,7 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
     const { rows } = await db.query(
       `SELECT username, first_name, last_name, email, role,
               TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
-              disabled, ldap_groups
+              disabled, ldap_groups, github_username, slack_username
        FROM users WHERE username = $1`,
       [username],
     );
@@ -87,12 +87,14 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   // Update DB immediately
   await db.query(
     `UPDATE users SET
-       role        = $1,
-       expiry_date = $2,
-       ldap_groups = $3,
-       updated_at  = NOW()
-     WHERE username = $4`,
-    [role || null, expiryDate || null, selectedGroups, username],
+       role            = $1,
+       expiry_date     = $2,
+       ldap_groups     = $3,
+       github_username = $4,
+       slack_username  = $5,
+       updated_at      = NOW()
+     WHERE username = $6`,
+    [role || null, expiryDate || null, selectedGroups, githubUsername?.trim() || null, slackUsername?.trim() || null, username],
   );
 
   res.redirect('/admin/users');
@@ -157,10 +159,25 @@ router.post('/new/sso', async (req: Request, res: Response) => {
   });
 });
 
-// Step 2: GitHub + Slack (stub)
+// Step 2: GitHub + Slack
 router.get('/new/github-slack', (req: Request, res: Response) => {
   if (!req.session.wizard?.steps.sso) return res.redirect('/admin/users/new');
   res.render('admin/users/new/step2', { wizard: req.session.wizard });
+});
+
+router.post('/new/github-slack', async (req: Request, res: Response) => {
+  if (!req.session.wizard?.steps.sso) return res.redirect('/admin/users/new');
+
+  const { githubUsername, slackUsername } = req.body as Record<string, string>;
+  const { username } = req.session.wizard.user;
+
+  await db.query(
+    `UPDATE users SET github_username = $1, slack_username = $2, updated_at = NOW()
+     WHERE username = $3`,
+    [githubUsername?.trim() || null, slackUsername?.trim() || null, username],
+  );
+
+  res.redirect('/admin/users/new/server');
 });
 
 // Step 3: Server access (stub)

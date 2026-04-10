@@ -28,7 +28,8 @@
             <th>Role</th>
             <th>Expiry</th>
             <th>Groups</th>
-            <th>Status</th>
+            <th>GitHub</th>
+            <th>Slack</th>
             <th></th>
           </tr>
         </thead>
@@ -49,13 +50,8 @@
                 </span>
               {% else %}—{% endif %}
             </td>
-            <td>
-              {% if u.disabled %}
-                <span class="badge badge-warn">Disabled</span>
-              {% else %}
-                <span class="badge badge-ok">Active</span>
-              {% endif %}
-            </td>
+            <td>{{ u.github_username or '—' }}</td>
+            <td>{{ u.slack_username or '—' }}</td>
             <td>
               <a href="/admin/users/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit User</a>
             </td>

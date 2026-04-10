@@ -26,6 +26,9 @@ export async function runMigrations(): Promise<void> {
       updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS github_username VARCHAR(100);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS slack_username  VARCHAR(100);
+
     CREATE TABLE IF NOT EXISTS audit_log (
       id               SERIAL PRIMARY KEY,
       actor            VARCHAR(100) NOT NULL,
