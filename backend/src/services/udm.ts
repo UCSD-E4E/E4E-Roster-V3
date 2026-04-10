@@ -129,6 +129,108 @@ export async function checkUser(username: string): Promise<SystemStatus> {
   };
 }
 
+export interface UdmUser {
+  dn: string;
+  username: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  expiryDate: string | null;    // ISO date string or null
+  disabled: boolean;
+  groups: string[];             // group CNs
+}
+
+export async function listUsers(): Promise<UdmUser[]> {
+  const res = await udmFetch('/users/user/?properties=*&page_size=1000');
+  if (!res.ok) throw new Error(`UDM error ${res.status}: ${res.statusText}`);
+  const data = await res.json() as UdmCollection;
+  const objects = data._embedded?.['udm:object'] ?? [];
+  return objects.map((obj) => {
+    const p = obj.properties;
+    const emailArr = (p['e-mail'] as string[]) ?? [];
+    return {
+      dn: obj.dn,
+      username: (p['username'] as string) || (obj.dn.match(/^uid=([^,]+)/i)?.[1] ?? ''),
+      firstName: (p['firstname'] as string) ?? '',
+      lastName: (p['lastname'] as string) ?? '',
+      email: emailArr[0] ?? (p['mailPrimaryAddress'] as string) ?? '',
+      expiryDate: (p['userexpiry'] as string) || null,
+      disabled: (p['disabled'] as boolean) ?? false,
+      groups: ((p['groups'] as string[]) ?? []).map((dn) => {
+        const m = dn.match(/^cn=([^,]+)/i);
+        return m ? m[1] : dn;
+      }),
+    };
+  });
+}
+
+export async function updateUserExpiry(
+  username: string,
+  expiryDate: string,
+): Promise<ProvisionResult> {
+  const userRes = await udmFetch(`/users/user/?filter=${encodeURIComponent(`uid=${username}`)}&properties=dn`);
+  if (!userRes.ok) return { status: 'failed', message: `UDM error ${userRes.status}` };
+  const userData = await userRes.json() as UdmCollection;
+  const userObj = userData._embedded?.['udm:object']?.[0];
+  if (!userObj) return { status: 'failed', message: `User ${username} not found in UDM` };
+
+  const getRes = await udmFetch(`/users/user/${encodeURIComponent(userObj.dn)}`);
+  const etag = getRes.headers.get('etag') ?? '*';
+
+  const patchRes = await udmFetch(
+    `/users/user/${encodeURIComponent(userObj.dn)}`,
+    'PATCH',
+    JSON.stringify({ properties: { userexpiry: expiryDate } }),
+    { 'If-Match': etag },
+  );
+
+  if (!patchRes.ok) {
+    const text = await patchRes.text();
+    return { status: 'failed', message: `Failed to update expiry: ${text.slice(0, 200)}` };
+  }
+  return { status: 'success', message: `Updated expiry for ${username}` };
+}
+
+export async function updateUserGroups(
+  username: string,
+  groupNames: string[],
+): Promise<ProvisionResult> {
+  // Find the user DN
+  const userRes = await udmFetch(`/users/user/?filter=${encodeURIComponent(`uid=${username}`)}&properties=dn,groups`);
+  if (!userRes.ok) return { status: 'failed', message: `UDM error ${userRes.status}` };
+  const userData = await userRes.json() as UdmCollection;
+  const userObj = userData._embedded?.['udm:object']?.[0];
+  if (!userObj) return { status: 'failed', message: `User ${username} not found in UDM` };
+
+  // Get ETag for the user resource
+  const getRes = await udmFetch(`/users/user/${encodeURIComponent(userObj.dn)}`);
+  const etag = getRes.headers.get('etag') ?? '*';
+
+  // Resolve group names to DNs
+  const groupDns = await Promise.all(
+    groupNames.map(async (name) => {
+      const r = await udmFetch(`/groups/group/?filter=${encodeURIComponent(`cn=${name}`)}&properties=dn`);
+      if (!r.ok) return null;
+      const d = await r.json() as UdmCollection;
+      return d._embedded?.['udm:object']?.[0]?.dn ?? null;
+    }),
+  );
+  const resolvedDns = groupDns.filter((dn): dn is string => dn !== null);
+
+  const patchRes = await udmFetch(
+    `/users/user/${encodeURIComponent(userObj.dn)}`,
+    'PATCH',
+    JSON.stringify({ properties: { groups: resolvedDns } }),
+    { 'If-Match': etag },
+  );
+
+  if (!patchRes.ok) {
+    const text = await patchRes.text();
+    return { status: 'failed', message: `Failed to update groups: ${text.slice(0, 200)}` };
+  }
+  return { status: 'success', message: `Updated groups for ${username}` };
+}
+
 export async function listGroups(): Promise<string[]> {
   const res = await udmFetch('/groups/group/?properties=name&page_size=500');
   if (!res.ok) throw new Error(`UDM error ${res.status}: ${res.statusText}`);
@@ -199,7 +301,13 @@ export async function createUser(
     let message = res.statusText;
     try {
       const err = await res.json() as Record<string, unknown>;
-      message = (err['error'] as string) || (err['message'] as string) || message;
+      // UDM wraps errors as { error: { message: "..." } }
+      const errObj = err['error'];
+      if (errObj && typeof errObj === 'object') {
+        message = (errObj as Record<string, unknown>)['message'] as string || message;
+      } else if (typeof err['message'] === 'string') {
+        message = err['message'] as string;
+      }
     } catch { /* ignore parse error */ }
     return { status: 'failed', message };
   }

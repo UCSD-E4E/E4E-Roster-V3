@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { Issuer } from 'openid-client';
 import { setupPassport } from './auth';
 import { createApp } from './app';
+import { runMigrations } from './services/db';
+import { startSyncSchedule } from './services/sync';
 
 async function bootstrap(): Promise<void> {
   const {
@@ -34,6 +36,9 @@ async function bootstrap(): Promise<void> {
   });
 
   setupPassport(client);
+
+  await runMigrations();
+  startSyncSchedule();
 
   const app = createApp();
   app.listen(parseInt(PORT, 10), () => {
