@@ -1,14 +1,17 @@
 {
   "name": "e4e-roster-github-app",
   "version": "0.1.0",
+  "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:smee": "smee --url $SMEE_URL --target http://localhost:${GITHUB_APP_PORT:-3001}/webhook",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src/"
   },
   "dependencies": {
     "@octokit/app": "^15.1.0",
+    "@octokit/rest": "^22.0.1",
     "@octokit/webhooks": "^13.4.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
@@ -21,6 +24,7 @@
     "@typescript-eslint/eslint-plugin": "^7.7.0",
     "@typescript-eslint/parser": "^7.7.0",
     "eslint": "^8.57.0",
+    "smee-client": "^5.0.0",
     "tsx": "^4.7.3",
     "typescript": "^5.4.5"
   }

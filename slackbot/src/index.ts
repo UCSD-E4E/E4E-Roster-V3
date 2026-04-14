@@ -29,16 +29,10 @@ async function runSync(app: App) {
     const report = await syncSlack();
 
     if (report.inSlackNotRoster.length > 0) {
-      console.warn(
-        `[slack-sync] ${report.inSlackNotRoster.length} Slack member(s) not in roster:`,
-        report.inSlackNotRoster.map((m) => `${m.realName} (${m.email ?? m.username})`).join(', '),
-      );
+      console.warn(`[slack-sync] ${report.inSlackNotRoster.length} Slack member(s) not in roster`);
     }
     if (report.inRosterNotSlack.length > 0) {
-      console.warn(
-        `[slack-sync] ${report.inRosterNotSlack.length} roster user(s) not found in Slack:`,
-        report.inRosterNotSlack.map((u) => u.username).join(', '),
-      );
+      console.warn(`[slack-sync] ${report.inRosterNotSlack.length} roster user(s) not found in Slack`);
     }
 
     await sendPostSyncNotifications(app.client, report);

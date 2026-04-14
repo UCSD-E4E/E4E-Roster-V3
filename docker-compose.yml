@@ -29,17 +29,17 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # github-app: (disabled — pending VM setup)
-  #   build:
-  #     context: .
-  #     dockerfile: github-app/Dockerfile
-  #   ports:
-  #     - "${GITHUB_APP_PORT:-3001}:3001"
-  #   env_file: .env
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #   restart: unless-stopped
+  github-app:
+    build:
+      context: .
+      dockerfile: github-app/Dockerfile
+    ports:
+      - "${GITHUB_APP_PORT:-3001}:3001"
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
   slackbot:
     build:

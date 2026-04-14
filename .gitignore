@@ -26,10 +26,15 @@ Thumbs.db
 .vscode/settings.json
 .idea/
 
-# Certificates — place certs in backend/certs/ but never commit them
+# Certificates and private keys — never commit these
 backend/certs/*.crt
 backend/certs/*.pem
 backend/certs/*.key
+*.pem
+*.key
+*.p12
+*.pfx
+github-app/private-keys/
 
 # Docker
 *.env.local
