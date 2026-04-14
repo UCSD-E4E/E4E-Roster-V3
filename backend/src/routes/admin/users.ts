@@ -112,6 +112,11 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
     );
   }
 
+  // Trigger immediate GitHub org invite if a GitHub username was set (non-fatal)
+  if (cleanGithub) {
+    triggerGithubInvite(cleanGithub);
+  }
+
   res.redirect('/admin/users');
 });
 
@@ -211,6 +216,11 @@ router.post('/new/github-slack', async (req: Request, res: Response) => {
     );
   }
 
+  // Trigger immediate GitHub org invite (non-fatal)
+  if (cleanGithub) {
+    triggerGithubInvite(cleanGithub);
+  }
+
   res.redirect('/admin/users/new/server');
 });
 
@@ -219,5 +229,16 @@ router.get('/new/server', (req: Request, res: Response) => {
   if (!req.session.wizard?.steps.sso) return res.redirect('/admin/users/new');
   res.render('admin/users/new/step3', { wizard: req.session.wizard });
 });
+
+// ── Helpers ───────────────────────────────────────────────────────
+
+function triggerGithubInvite(githubUsername: string): void {
+  const base = process.env.GITHUB_APP_URL ?? 'http://github-app:3001';
+  fetch(`${base}/invite`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ githubUsername }),
+  }).catch((err) => console.warn(`[admin] GitHub invite trigger failed for ${githubUsername}:`, err));
+}
 
 export default router;
