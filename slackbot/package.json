@@ -8,6 +8,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
+    "@slack/bolt": "^4.1.0",
     "@slack/web-api": "^7.3.0",
     "dotenv": "^16.4.5",
     "pg": "^8.11.5"

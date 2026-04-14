@@ -14,7 +14,7 @@ import { db } from './db';
 export interface SyncReport {
   matched: number;
   inSlackNotRoster: SlackMember[];   // active Slack members with no roster entry
-  inRosterNotSlack: { username: string; slack_username: string | null }[];
+  inRosterNotSlack: { username: string; email: string; slack_username: string | null }[];
 }
 
 export async function syncSlack(): Promise<SyncReport> {
@@ -24,11 +24,8 @@ export async function syncSlack(): Promise<SyncReport> {
 
   console.log(`[slack-sync] ${activeMembers.length} active workspace members`);
 
-  const { rows: rosterUsers } = await db.query<{
-    username: string;
-    email: string;
-    slack_username: string | null;
-  }>('SELECT username, email, slack_username FROM users');
+  type RosterRow = { username: string; email: string; slack_username: string | null };
+  const { rows: rosterUsers }: { rows: RosterRow[] } = await db.query('SELECT username, email, slack_username FROM users');
 
   const rosterByEmail = new Map(rosterUsers.map((u) => [u.email?.toLowerCase(), u]));
   const rosterBySlackName = new Map(

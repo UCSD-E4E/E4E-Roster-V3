@@ -26,6 +26,15 @@ export interface SlackMember {
   deleted: boolean;     // deactivated accounts
 }
 
+/** Send a direct message to a user by their Slack member ID. */
+export async function sendDirectMessage(slackUserId: string, text: string): Promise<void> {
+  const client = getClient();
+  // Open (or reuse) a DM channel with the user
+  const { channel } = await client.conversations.open({ users: slackUserId });
+  if (!channel?.id) throw new Error(`Could not open DM with ${slackUserId}`);
+  await client.chat.postMessage({ channel: channel.id, text });
+}
+
 /** Fetch all non-bot, non-deleted workspace members. */
 export async function listWorkspaceMembers(): Promise<SlackMember[]> {
   const client = getClient();

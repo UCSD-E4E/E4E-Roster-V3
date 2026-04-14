@@ -63,12 +63,12 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   // Update groups in UDM
   const groupResult = await udm.updateUserGroups(username, selectedGroups);
 
-  // Update expiry in UDM (only if provided)
+  // Update expiry in UDM (always — empty string clears it)
   let udmError: string | null = null;
   if (groupResult.status === 'failed') {
     udmError = groupResult.message;
-  } else if (expiryDate) {
-    const expiryResult = await udm.updateUserExpiry(username, expiryDate);
+  } else {
+    const expiryResult = await udm.updateUserExpiry(username, expiryDate ?? '');
     if (expiryResult.status === 'failed') udmError = expiryResult.message;
   }
 
@@ -84,6 +84,9 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
     return res.render('admin/users/edit-user', { user: rows[0], allGroups, error: udmError });
   }
 
+  const cleanGithub = githubUsername?.trim() || null;
+  const cleanSlack = slackUsername?.trim() || null;
+
   // Update DB immediately
   await db.query(
     `UPDATE users SET
@@ -94,8 +97,20 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
        slack_username  = $5,
        updated_at      = NOW()
      WHERE username = $6`,
-    [role || null, expiryDate || null, selectedGroups, githubUsername?.trim() || null, slackUsername?.trim() || null, username],
+    [role || null, expiryDate || null, selectedGroups, cleanGithub, cleanSlack, username],
   );
+
+  // Write Slack/GitHub/role back to LDAP extended attributes (non-fatal)
+  const cleanRole = role || null;
+  const ldapFields: { slackId?: string | null; githubUsername?: string | null; role?: string | null } = {};
+  if (cleanSlack !== null) ldapFields.slackId = cleanSlack;
+  if (cleanGithub !== null) ldapFields.githubUsername = cleanGithub;
+  if (cleanRole !== null) ldapFields.role = cleanRole;
+  if (Object.keys(ldapFields).length > 0) {
+    udm.updateUserLdapFields(username, ldapFields).catch((err) =>
+      console.warn(`[admin] LDAP write-back failed for ${username}:`, err),
+    );
+  }
 
   res.redirect('/admin/users');
 });
@@ -148,6 +163,12 @@ router.post('/new/sso', async (req: Request, res: Response) => {
          role = EXCLUDED.role, updated_at = NOW()`,
       [user.username, user.firstName, user.lastName, user.email, user.role, user.expiryDate, user.ldapGroups],
     );
+    // Write role to LDAP extended attribute immediately (non-fatal)
+    if (user.role) {
+      udm.updateUserLdapFields(user.username, { role: user.role }).catch((err) =>
+        console.warn(`[wizard] LDAP role write-back failed for ${user.username}:`, err),
+      );
+    }
   }
 
   req.session.wizard = { user, steps: { sso: result } };
@@ -171,11 +192,24 @@ router.post('/new/github-slack', async (req: Request, res: Response) => {
   const { githubUsername, slackUsername } = req.body as Record<string, string>;
   const { username } = req.session.wizard.user;
 
+  const cleanGithub = githubUsername?.trim() || null;
+  const cleanSlack = slackUsername?.trim() || null;
+
   await db.query(
     `UPDATE users SET github_username = $1, slack_username = $2, updated_at = NOW()
      WHERE username = $3`,
-    [githubUsername?.trim() || null, slackUsername?.trim() || null, username],
+    [cleanGithub, cleanSlack, username],
   );
+
+  // Write to LDAP extended attributes (non-fatal — user can be linked later)
+  if (cleanGithub || cleanSlack) {
+    const ldapFields: { slackId?: string | null; githubUsername?: string | null } = {};
+    if (cleanSlack) ldapFields.slackId = cleanSlack;
+    if (cleanGithub) ldapFields.githubUsername = cleanGithub;
+    udm.updateUserLdapFields(username, ldapFields).catch((err) =>
+      console.warn(`[wizard] LDAP write-back failed for ${username}:`, err),
+    );
+  }
 
   res.redirect('/admin/users/new/server');
 });

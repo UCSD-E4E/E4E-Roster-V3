@@ -116,6 +116,97 @@ function generateTempPassword(): string {
   return crypto.randomBytes(12).toString('base64url');
 }
 
+// ── Extended attribute helpers ────────────────────────────────────
+
+/** Extract the base DC portion from UDM_USERS_POSITION (e.g. dc=example,dc=com). */
+function baseDn(): string {
+  const pos = process.env.UDM_USERS_POSITION ?? '';
+  const m = pos.match(/(dc=.+)$/i);
+  return m ? m[1] : pos;
+}
+
+const EXTENDED_ATTRS = [
+  {
+    name: 'e4eSlackId',
+    ldapMapping: 'univentionFreeAttribute1',
+    shortDescription: 'E4E Slack Member ID',
+    longDescription: 'Stable Slack member ID (U...) for the E4E workspace',
+  },
+  {
+    name: 'e4eGithubUsername',
+    ldapMapping: 'univentionFreeAttribute2',
+    shortDescription: 'E4E GitHub Username',
+    longDescription: 'GitHub username for the UCSD-E4E organization',
+  },
+  {
+    name: 'LabRole',
+    ldapMapping: 'univentionFreeAttribute3',
+    shortDescription: 'E4E Lab Role',
+    longDescription: 'Role within the E4E lab (e.g. student, staff)',
+  },
+];
+
+/**
+ * Idempotently creates the two UDM extended attributes (e4eSlackId, e4eGithubUsername)
+ * on the users/user module using univentionFreeAttribute slots.
+ * Safe to call on every startup — skips any that already exist.
+ */
+export async function ensureExtendedAttributes(): Promise<void> {
+  const position = `cn=custom attributes,cn=univention,${baseDn()}`;
+
+  for (const attr of EXTENDED_ATTRS) {
+    const checkRes = await udmFetch(
+      `/settings/extended_attribute/?filter=${encodeURIComponent(`name=${attr.name}`)}`,
+    );
+    if (!checkRes.ok) {
+      console.warn(`[udm] cannot check extended attribute ${attr.name}: ${checkRes.status}`);
+      continue;
+    }
+    const data = await checkRes.json() as UdmCollection;
+    if ((data._embedded?.['udm:object'] ?? []).length > 0) {
+      console.log(`[udm] extended attribute ${attr.name} already exists, skipping`);
+      continue;
+    }
+
+    const createRes = await udmFetch(
+      '/settings/extended_attribute/',
+      'POST',
+      JSON.stringify({
+        position,
+        properties: {
+          name: attr.name,
+          module: ['users/user'],
+          ldapMapping: attr.ldapMapping,
+          objectClass: 'univentionFreeAttributes',
+          syntax: 'string',
+          shortDescription: attr.shortDescription,
+          longDescription: attr.longDescription,
+          tabName: 'E4E',
+          tabPosition: 1,
+          groupName: 'E4E Integration',
+          groupPosition: 1,
+          deleteObjectClass: false,
+          overwriteTab: false,
+          fullWidth: false,
+          notEditable: false,
+          mayChange: true,
+          multivalue: false,
+          valueRequired: false,
+          CLIName: attr.name,
+          version: '2',
+        },
+      }),
+    );
+
+    if (createRes.ok || createRes.status === 201) {
+      console.log(`[udm] created extended attribute ${attr.name}`);
+    } else {
+      const text = await createRes.text();
+      console.warn(`[udm] failed to create extended attribute ${attr.name}: ${text.slice(0, 300)}`);
+    }
+  }
+}
+
 // ── Exported service functions ────────────────────────────────────
 
 export async function checkUser(username: string): Promise<SystemStatus> {
@@ -138,6 +229,9 @@ export interface UdmUser {
   expiryDate: string | null;    // ISO date string or null
   disabled: boolean;
   groups: string[];             // group CNs
+  slackId: string | null;       // e4eSlackId extended attribute
+  githubUsername: string | null; // e4eGithubUsername extended attribute
+  role: string | null;           // LabRole extended attribute
 }
 
 export async function listUsers(): Promise<UdmUser[]> {
@@ -160,13 +254,16 @@ export async function listUsers(): Promise<UdmUser[]> {
         const m = dn.match(/^cn=([^,]+)/i);
         return m ? m[1] : dn;
       }),
+      slackId: (p['e4eSlackId'] as string) || null,
+      githubUsername: (p['e4eGithubUsername'] as string) || null,
+      role: (p['LabRole'] as string) || null,
     };
   });
 }
 
 export async function updateUserExpiry(
   username: string,
-  expiryDate: string,
+  expiryDate: string | null,
 ): Promise<ProvisionResult> {
   const userRes = await udmFetch(`/users/user/?filter=${encodeURIComponent(`uid=${username}`)}&properties=dn`);
   if (!userRes.ok) return { status: 'failed', message: `UDM error ${userRes.status}` };
@@ -177,10 +274,13 @@ export async function updateUserExpiry(
   const getRes = await udmFetch(`/users/user/${encodeURIComponent(userObj.dn)}`);
   const etag = getRes.headers.get('etag') ?? '*';
 
+  // UDM requires null (not empty string) to clear the expiry field
+  const value = expiryDate || null;
+
   const patchRes = await udmFetch(
     `/users/user/${encodeURIComponent(userObj.dn)}`,
     'PATCH',
-    JSON.stringify({ properties: { userexpiry: expiryDate } }),
+    JSON.stringify({ properties: { userexpiry: value } }),
     { 'If-Match': etag },
   );
 
@@ -229,6 +329,44 @@ export async function updateUserGroups(
     return { status: 'failed', message: `Failed to update groups: ${text.slice(0, 200)}` };
   }
   return { status: 'success', message: `Updated groups for ${username}` };
+}
+
+/**
+ * Write E4E-specific extended attributes back to LDAP.
+ * Pass only the fields you want to change; undefined fields are left untouched.
+ */
+export async function updateUserLdapFields(
+  username: string,
+  fields: { slackId?: string | null; githubUsername?: string | null; role?: string | null },
+): Promise<ProvisionResult> {
+  const userRes = await udmFetch(
+    `/users/user/?filter=${encodeURIComponent(`uid=${username}`)}&properties=dn`,
+  );
+  if (!userRes.ok) return { status: 'failed', message: `UDM error ${userRes.status}` };
+  const userData = await userRes.json() as UdmCollection;
+  const userObj = userData._embedded?.['udm:object']?.[0];
+  if (!userObj) return { status: 'failed', message: `User ${username} not found in UDM` };
+
+  const getRes = await udmFetch(`/users/user/${encodeURIComponent(userObj.dn)}`);
+  const etag = getRes.headers.get('etag') ?? '*';
+
+  const props: Record<string, string | null> = {};
+  if (fields.slackId !== undefined) props['e4eSlackId'] = fields.slackId ?? '';
+  if (fields.githubUsername !== undefined) props['e4eGithubUsername'] = fields.githubUsername ?? '';
+  if (fields.role !== undefined) props['LabRole'] = fields.role ?? '';
+
+  const patchRes = await udmFetch(
+    `/users/user/${encodeURIComponent(userObj.dn)}`,
+    'PATCH',
+    JSON.stringify({ properties: props }),
+    { 'If-Match': etag },
+  );
+
+  if (!patchRes.ok) {
+    const text = await patchRes.text();
+    return { status: 'failed', message: `Failed to update LDAP fields for ${username}: ${text.slice(0, 200)}` };
+  }
+  return { status: 'success', message: `Updated LDAP fields for ${username}` };
 }
 
 export async function listGroups(): Promise<string[]> {
