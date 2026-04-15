@@ -11,6 +11,9 @@
         {% if user.isAdmin %}
         <a href="/admin/users">Admin</a>
         {% endif %}
+        {% if user.isProjectLead %}
+        <a href="/pl/projects">Project Lead</a>
+        {% endif %}
         <span class="nav-user">{{ user.name or user.username }}</span>
         <form method="POST" action="/logout" style="display:inline">
           <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>

@@ -17,6 +17,7 @@ export function setupPassport(client: Client): void {
         const groups =
           ((userinfo as Record<string, unknown>).groups as string[]) ?? [];
         const adminGroup = process.env.ADMIN_GROUP ?? 'e4e-admin';
+        const plGroup = process.env.PL_GROUP_NAME ?? '';
 
         const user: AuthUser = {
           id: userinfo.sub,
@@ -25,6 +26,7 @@ export function setupPassport(client: Client): void {
           username: (userinfo.preferred_username as string) ?? userinfo.sub,
           groups,
           isAdmin: groups.includes(adminGroup),
+          isProjectLead: plGroup !== '' && groups.includes(plGroup),
         };
 
         return done(null, user);

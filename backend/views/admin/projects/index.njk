@@ -1,0 +1,71 @@
+{% extends "layout.njk" %}
+{% block title %}Projects — Admin{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <h2>Projects</h2>
+        <p class="text-muted" style="margin:0;font-size:.9rem">
+          Group LDAP groups into projects. Project Leads can manage users in their project.
+        </p>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:1.5rem;align-items:start">
+
+      {# Left: project list #}
+      <div>
+        {% if projects.length %}
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>LDAP Groups</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in projects %}
+              <tr>
+                <td><strong>{{ p.name }}</strong>
+                  {% if p.description %}<br><span class="text-muted" style="font-size:.8rem">{{ p.description }}</span>{% endif %}
+                </td>
+                <td>{{ p.group_count }} group(s)</td>
+                <td>
+                  <a href="/admin/projects/{{ p.id }}" class="btn btn-ghost btn-sm">Manage</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted">No projects yet. Create one on the right.</p>
+        {% endif %}
+      </div>
+
+      {# Right: create form #}
+      <div class="card">
+        <h4 style="margin-top:0">New Project</h4>
+        <form method="POST" action="/admin/projects">
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Name</label>
+            <input type="text" name="name" class="form-input" required placeholder="e.g. Smartfin">
+          </div>
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Description <span class="text-muted">(optional)</span></label>
+            <input type="text" name="description" class="form-input" placeholder="Short description">
+          </div>
+          <button class="btn btn-primary" type="submit">Create Project</button>
+        </form>
+      </div>
+
+    </div>
+
+  </main>
+</div>
+{% endblock %}

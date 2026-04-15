@@ -47,6 +47,19 @@ export async function runMigrations(): Promise<void> {
       created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
       UNIQUE (ldap_group, service, target_id)
     );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id          SERIAL PRIMARY KEY,
+      name        VARCHAR(255) NOT NULL UNIQUE,
+      description TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS project_ldap_groups (
+      project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      ldap_group  VARCHAR(255) NOT NULL,
+      PRIMARY KEY (project_id, ldap_group)
+    );
   `);
   console.log('[db] migrations complete');
 }

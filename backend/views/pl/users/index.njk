@@ -1,0 +1,63 @@
+{% extends "layout.njk" %}
+{% block title %}{{ project.name }} Members{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "pl/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <a href="/pl/projects" style="font-size:.85rem;color:var(--text-muted)">&larr; My Projects</a>
+        <h2 style="margin:.25rem 0 0">{{ project.name }}</h2>
+      </div>
+      <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-primary">+ Add Member</a>
+    </div>
+
+    {% if warning %}
+    <div class="alert alert-error" style="margin-top:1rem">{{ warning }}</div>
+    {% endif %}
+
+    {% if users.length %}
+    <div class="table-wrapper" style="margin-top:1rem">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Expiry</th>
+            <th>GitHub</th>
+            <th>Slack</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr class="{{ 'row-disabled' if u.disabled }}">
+            <td><code>{{ u.username }}</code></td>
+            <td>{{ u.first_name }} {{ u.last_name }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.expiry_date or 'No expiry' }}</td>
+            <td>{{ u.github_username or '—' }}</td>
+            <td>{{ u.slack_username or '—' }}</td>
+            <td>
+              {% if u.disabled %}<span style="color:var(--danger)">Disabled</span>
+              {% else %}<span style="color:var(--success)">Active</span>{% endif %}
+            </td>
+            <td style="display:flex;gap:.25rem">
+              <a href="/pl/projects/{{ project.id }}/users/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit</a>
+              <a href="/pl/projects/{{ project.id }}/users/{{ u.username }}/audit" class="btn btn-ghost btn-sm">Log</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted" style="margin-top:1rem">No members in this project yet.</p>
+    {% endif %}
+
+  </main>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "layout.njk" %}
+{% block title %}Audit Log — {{ user.username }} — {{ project.name }}{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "pl/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <a href="/pl/projects/{{ project.id }}/users" style="font-size:.85rem;color:var(--text-muted)">&larr; {{ project.name }}</a>
+        <h2 style="margin:.25rem 0 0">Audit Log — {{ user.first_name }} {{ user.last_name }}</h2>
+        <p class="text-muted" style="margin:0;font-size:.9rem"><code>{{ user.username }}</code></p>
+      </div>
+    </div>
+
+    {% if logs.length %}
+    <div class="table-wrapper" style="margin-top:1rem">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td style="white-space:nowrap;font-size:.85rem">{{ log.created_at }}</td>
+            <td><code>{{ log.actor }}</code></td>
+            <td>{{ log.action }}</td>
+            <td style="font-size:.85rem;color:var(--text-muted)">
+              {% if log.details %}{{ log.details | dump }}{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted" style="margin-top:1rem">No audit entries for this user.</p>
+    {% endif %}
+
+  </main>
+</div>
+{% endblock %}

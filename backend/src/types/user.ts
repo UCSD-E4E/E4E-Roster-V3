@@ -5,4 +5,5 @@ export interface AuthUser {
   username: string;
   groups: string[];
   isAdmin: boolean;
+  isProjectLead: boolean;
 }

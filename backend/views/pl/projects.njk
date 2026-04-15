@@ -1,0 +1,52 @@
+{% extends "layout.njk" %}
+{% block title %}My Projects{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "pl/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <h2>My Projects</h2>
+        <p class="text-muted" style="margin:0;font-size:.9rem">
+          Projects you lead based on your LDAP group membership.
+        </p>
+      </div>
+    </div>
+
+    {% if projects.length %}
+    <div class="table-wrapper" style="margin-top:1.5rem">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Members</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in projects %}
+          <tr>
+            <td>
+              <strong>{{ p.name }}</strong>
+              {% if p.description %}<br><span class="text-muted" style="font-size:.8rem">{{ p.description }}</span>{% endif %}
+            </td>
+            <td>{{ p.member_count }}</td>
+            <td>
+              <a href="/pl/projects/{{ p.id }}/users" class="btn btn-primary btn-sm">Manage Members</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card" style="text-align:center;padding:3rem;margin-top:1.5rem;color:var(--text-muted)">
+      You are not currently assigned as a lead for any project.<br>
+      Ask an admin to add your LDAP groups to a project.
+    </div>
+    {% endif %}
+
+  </main>
+</div>
+{% endblock %}

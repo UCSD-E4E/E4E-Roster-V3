@@ -1,0 +1,89 @@
+{% extends "layout.njk" %}
+{% block title %}Edit {{ user.username }} — {{ project.name }}{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "pl/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <a href="/pl/projects/{{ project.id }}/users" style="font-size:.85rem;color:var(--text-muted)">&larr; {{ project.name }}</a>
+        <h2 style="margin:.25rem 0 0">{{ user.first_name }} {{ user.last_name }}</h2>
+        <p class="text-muted" style="margin:0;font-size:.9rem"><code>{{ user.username }}</code> &middot; {{ user.email }}</p>
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error" style="margin-bottom:1rem">{{ error }}</div>
+    {% endif %}
+
+    <div style="max-width:600px">
+      <form method="POST" action="/pl/projects/{{ project.id }}/users/{{ user.username }}/edit">
+        <div class="card">
+          <h4 style="margin-top:0">Account Details</h4>
+
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Expiry Date <span class="text-muted">(leave blank for no expiry)</span></label>
+            <input type="date" name="expiryDate" class="form-input" value="{{ user.expiry_date or '' }}">
+          </div>
+
+          <div style="margin-bottom:1rem">
+            <label class="form-label">GitHub Username</label>
+            <input type="text" name="githubUsername" class="form-input" value="{{ user.github_username or '' }}" placeholder="github-handle">
+          </div>
+
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Slack User ID</label>
+            <input type="text" name="slackUsername" class="form-input" value="{{ user.slack_username or '' }}" placeholder="UXXXXXXXX">
+          </div>
+
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Account Status</label>
+            <select name="disabled" class="form-input">
+              <option value="false" {{ 'selected' if not user.disabled }}>Active</option>
+              <option value="true"  {{ 'selected' if user.disabled }}>Disabled</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:1rem">
+          <h4 style="margin-top:0">Project Groups</h4>
+          <p class="text-muted" style="font-size:.85rem;margin-top:0">
+            Only groups belonging to <strong>{{ project.name }}</strong> are shown. Other group memberships are preserved.
+          </p>
+          {% if projectGroups.length %}
+          <div style="display:flex;flex-direction:column;gap:.4rem">
+            {% for g in projectGroups %}
+            <label style="display:flex;align-items:center;gap:.5rem;font-size:.9rem">
+              <input type="checkbox" name="groups" value="{{ g }}"
+                     {{ 'checked' if g in user.ldap_groups }}>
+              {{ g }}
+            </label>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-muted" style="font-size:.85rem">No LDAP groups are configured for this project.</p>
+          {% endif %}
+
+          {% if user.ldap_groups and user.ldap_groups.length %}
+          <details style="margin-top:1rem">
+            <summary style="font-size:.85rem;color:var(--text-muted);cursor:pointer">All current groups (read-only)</summary>
+            <div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.25rem">
+              {% for g in user.ldap_groups %}
+              <span class="tag">{{ g }}</span>
+              {% endfor %}
+            </div>
+          </details>
+          {% endif %}
+        </div>
+
+        <div style="margin-top:1rem;display:flex;gap:.5rem">
+          <button class="btn btn-primary" type="submit">Save Changes</button>
+          <a href="/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+  </main>
+</div>
+{% endblock %}
