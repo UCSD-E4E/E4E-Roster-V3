@@ -45,6 +45,8 @@ services:
     build:
       context: .
       dockerfile: slackbot/Dockerfile
+    ports:
+      - "127.0.0.1:${SLACK_INTERNAL_PORT:-3002}:3002"
     env_file: .env
     depends_on:
       db:

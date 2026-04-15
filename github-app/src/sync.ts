@@ -6,7 +6,7 @@
  *
  * Any roster user with a github_username not in the org is auto-invited.
  */
-import { listOrgMembers, inviteToOrg, type OrgMember } from './github.js';
+import { listOrgMembers, inviteToOrg, addToTeam, type OrgMember } from './github.js';
 import { db } from './db.js';
 
 export interface SyncReport {
@@ -22,9 +22,9 @@ export async function syncGithub(): Promise<SyncReport> {
   const orgMembers = await listOrgMembers();
   console.log(`[github-sync] ${orgMembers.length} org members`);
 
-  type RosterRow = { username: string; github_username: string };
+  type RosterRow = { username: string; github_username: string; ldap_groups: string[] };
   const { rows: rosterUsers } = await db.query<RosterRow>(
-    `SELECT username, github_username FROM users WHERE github_username IS NOT NULL`,
+    `SELECT username, github_username, ldap_groups FROM users WHERE github_username IS NOT NULL`,
   );
 
   const rosterByGithub = new Map(
@@ -81,7 +81,38 @@ export async function syncGithub(): Promise<SyncReport> {
     console.warn(`[github-sync] failed to invite ${inviteFailed.length} user(s): ${inviteFailed.join(', ')}`);
   }
 
+  // Apply group → team mappings for all matched users
+  await applyTeamMappings(rosterUsers.filter((u) => orgLogins.has(u.github_username.toLowerCase())));
+
   return { matched, inGithubNotRoster, inRosterNotGithub, invited, inviteFailed };
+}
+
+async function applyTeamMappings(
+  users: { github_username: string; ldap_groups: string[] }[],
+): Promise<void> {
+  type MappingRow = { ldap_group: string; target_id: string };
+  const { rows: mappings } = await db.query<MappingRow>(
+    `SELECT ldap_group, target_id FROM group_mappings WHERE service = 'github'`,
+  );
+  if (mappings.length === 0) return;
+
+  const mappingsByGroup = new Map<string, string[]>();
+  for (const m of mappings) {
+    const teams = mappingsByGroup.get(m.ldap_group) ?? [];
+    teams.push(m.target_id);
+    mappingsByGroup.set(m.ldap_group, teams);
+  }
+
+  for (const user of users) {
+    for (const group of (user.ldap_groups ?? [])) {
+      const teams = mappingsByGroup.get(group) ?? [];
+      for (const teamSlug of teams) {
+        await addToTeam(user.github_username, teamSlug).catch((err) =>
+          console.warn(`[github-sync] failed to add ${user.github_username} to team ${teamSlug}:`, err),
+        );
+      }
+    }
+  }
 }
 
 /**

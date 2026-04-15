@@ -118,6 +118,17 @@ export async function inviteToOrg(githubUsername: string, teamSlugs: string[] = 
   });
 }
 
+/** Add a GitHub user to an org team. Idempotent — safe to call if already a member. */
+export async function addToTeam(githubUsername: string, teamSlug: string): Promise<void> {
+  const octokit = await getOctokit();
+  const org = requireEnv('GITHUB_ORG');
+  await octokit.request('PUT /orgs/{org}/teams/{team_slug}/memberships/{username}', {
+    org,
+    team_slug: teamSlug,
+    username: githubUsername,
+  });
+}
+
 export function getWebhooks() {
   return getApp().webhooks;
 }

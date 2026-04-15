@@ -10,6 +10,7 @@
  */
 import { listWorkspaceMembers, SlackMember } from './slack';
 import { db } from './db';
+import type { WebClient } from '@slack/web-api';
 
 export interface SyncReport {
   matched: number;
@@ -17,15 +18,17 @@ export interface SyncReport {
   inRosterNotSlack: { username: string; email: string; slack_username: string | null }[];
 }
 
-export async function syncSlack(): Promise<SyncReport> {
+export async function syncSlack(client?: WebClient): Promise<SyncReport> {
   console.log('[slack-sync] fetching workspace members');
   const slackMembers = await listWorkspaceMembers();
   const activeMembers = slackMembers.filter((m) => !m.deleted);
 
   console.log(`[slack-sync] ${activeMembers.length} active workspace members`);
 
-  type RosterRow = { username: string; email: string; slack_username: string | null };
-  const { rows: rosterUsers }: { rows: RosterRow[] } = await db.query('SELECT username, email, slack_username FROM users');
+  type RosterRow = { username: string; email: string; slack_username: string | null; ldap_groups: string[] };
+  const { rows: rosterUsers }: { rows: RosterRow[] } = await db.query(
+    'SELECT username, email, slack_username, ldap_groups FROM users',
+  );
 
   const rosterByEmail = new Map(rosterUsers.map((u) => [u.email?.toLowerCase(), u]));
   const rosterBySlackName = new Map(
@@ -33,6 +36,7 @@ export async function syncSlack(): Promise<SyncReport> {
   );
 
   let matched = 0;
+  const matchedUsers: { slackId: string; ldap_groups: string[] }[] = [];
   const inSlackNotRoster: SlackMember[] = [];
 
   for (const member of activeMembers) {
@@ -48,6 +52,7 @@ export async function syncSlack(): Promise<SyncReport> {
           [member.id, rosterEntry.username],
         );
       }
+      matchedUsers.push({ slackId: member.id, ldap_groups: rosterEntry.ldap_groups ?? [] });
       matched++;
     } else {
       inSlackNotRoster.push(member);
@@ -65,5 +70,50 @@ export async function syncSlack(): Promise<SyncReport> {
     `${inRosterNotSlack.length} roster entries not in Slack`,
   );
 
+  // Apply group → channel mappings for matched users
+  if (client) {
+    await applyChannelMappings(client, matchedUsers);
+  }
+
   return { matched, inSlackNotRoster, inRosterNotSlack };
+}
+
+async function applyChannelMappings(
+  client: WebClient,
+  users: { slackId: string; ldap_groups: string[] }[],
+): Promise<void> {
+  type MappingRow = { ldap_group: string; target_id: string };
+  const { rows: mappings } = await db.query<MappingRow>(
+    `SELECT ldap_group, target_id FROM group_mappings WHERE service = 'slack'`,
+  );
+  if (mappings.length === 0) return;
+
+  const mappingsByGroup = new Map<string, string[]>();
+  for (const m of mappings) {
+    const channels = mappingsByGroup.get(m.ldap_group) ?? [];
+    channels.push(m.target_id);
+    mappingsByGroup.set(m.ldap_group, channels);
+  }
+
+  for (const user of users) {
+    for (const group of user.ldap_groups) {
+      const channels = mappingsByGroup.get(group) ?? [];
+      for (const channelId of channels) {
+        try {
+          // Ensure bot is in the channel before inviting (public channels only)
+          try {
+            await client.conversations.join({ channel: channelId });
+          } catch {
+            // Private channels can't be joined this way — bot must be added manually
+          }
+          await client.conversations.invite({ channel: channelId, users: user.slackId });
+        } catch (err: unknown) {
+          const code = (err as { data?: { error?: string } })?.data?.error;
+          if (code !== 'already_in_channel' && code !== 'cant_invite_self') {
+            console.warn(`[slack-sync] failed to invite ${user.slackId} to ${channelId}:`, code ?? err);
+          }
+        }
+      }
+    }
+  }
 }

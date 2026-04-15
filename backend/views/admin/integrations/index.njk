@@ -1,0 +1,194 @@
+{% extends "layout.njk" %}
+{% block title %}Integrations — Admin{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <h2>Group Integrations</h2>
+        <p class="text-muted" style="margin:0;font-size:.9rem">
+          Map LDAP groups to GitHub teams and Slack channels.
+        </p>
+      </div>
+      <div>
+        <button id="syncBtn" class="btn btn-secondary" onclick="triggerSync()">Sync Integrations</button>
+      </div>
+    </div>
+    <div id="syncStatus" style="display:none;margin-bottom:1rem"></div>
+
+    <div style="display:flex;gap:1.5rem;align-items:flex-start;margin-top:1.5rem">
+
+      {# ── Left: group list ── #}
+      <div style="width:220px;flex-shrink:0">
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="padding:.6rem 1rem;border-bottom:1px solid var(--border);font-weight:600;font-size:.85rem;color:var(--text-muted)">
+            LDAP GROUPS
+          </div>
+          <ul style="list-style:none;margin:0;padding:0;max-height:70vh;overflow-y:auto">
+            {% for grp in groups %}
+            <li>
+              <a href="/admin/integrations?group={{ grp | urlencode }}"
+                 style="display:block;padding:.5rem 1rem;text-decoration:none;font-size:.9rem;
+                        {% if grp == selectedGroup %}background:var(--primary);color:#fff;{% endif %}">
+                {{ grp }}
+              </a>
+            </li>
+            {% else %}
+            <li style="padding:.75rem 1rem;color:var(--text-muted);font-size:.85rem">No groups found</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+
+      {# ── Right: mappings panel ── #}
+      <div style="flex:1;min-width:0">
+        {% if selectedGroup %}
+
+        <h3 style="margin-top:0">{{ selectedGroup }}</h3>
+
+        {# Current mappings #}
+        {% set githubMappings = [] %}
+        {% set slackMappings = [] %}
+        {% for m in mappings %}
+          {% if m.service === 'github' %}{% set githubMappings = githubMappings.concat([m]) %}{% endif %}
+          {% if m.service === 'slack' %}{% set slackMappings = slackMappings.concat([m]) %}{% endif %}
+        {% endfor %}
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+
+          {# GitHub teams #}
+          <div class="card">
+            <h4 style="margin-top:0;display:flex;align-items:center;gap:.5rem">
+              GitHub Teams
+            </h4>
+            {% if githubMappings.length %}
+            <ul style="list-style:none;padding:0;margin:0 0 1rem">
+              {% for m in githubMappings %}
+              <li style="display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border)">
+                <span><code>{{ m.target_id }}</code> {{ m.target_name }}</span>
+                <form method="POST" action="/admin/integrations/mappings/{{ m.id }}/delete" style="margin:0">
+                  <input type="hidden" name="ldapGroup" value="{{ selectedGroup }}">
+                  <button class="btn btn-ghost btn-sm" style="color:var(--danger)">Remove</button>
+                </form>
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-muted" style="font-size:.875rem">No GitHub teams mapped.</p>
+            {% endif %}
+            <form method="POST" action="/admin/integrations/mappings" style="display:flex;gap:.5rem;align-items:center">
+              <input type="hidden" name="ldapGroup" value="{{ selectedGroup }}">
+              <input type="hidden" name="service" value="github">
+              <input type="hidden" name="targetId" id="githubTargetId">
+              <input type="hidden" name="targetName" id="githubTargetName">
+              <select id="githubSelect" class="form-input" style="flex:1"
+                      onchange="syncHidden('githubSelect','githubTargetId','githubTargetName')">
+                <option value="">Loading teams...</option>
+              </select>
+              <button class="btn btn-primary btn-sm" type="submit">Add</button>
+            </form>
+          </div>
+
+          {# Slack channels #}
+          <div class="card">
+            <h4 style="margin-top:0">Slack Channels</h4>
+            {% if slackMappings.length %}
+            <ul style="list-style:none;padding:0;margin:0 0 1rem">
+              {% for m in slackMappings %}
+              <li style="display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border)">
+                <span><code>{{ m.target_id }}</code> #{{ m.target_name }}</span>
+                <form method="POST" action="/admin/integrations/mappings/{{ m.id }}/delete" style="margin:0">
+                  <input type="hidden" name="ldapGroup" value="{{ selectedGroup }}">
+                  <button class="btn btn-ghost btn-sm" style="color:var(--danger)">Remove</button>
+                </form>
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-muted" style="font-size:.875rem">No Slack channels mapped.</p>
+            {% endif %}
+            <form method="POST" action="/admin/integrations/mappings" style="display:flex;gap:.5rem;align-items:center">
+              <input type="hidden" name="ldapGroup" value="{{ selectedGroup }}">
+              <input type="hidden" name="service" value="slack">
+              <input type="hidden" name="targetId" id="slackTargetId">
+              <input type="hidden" name="targetName" id="slackTargetName">
+              <select id="slackSelect" class="form-input" style="flex:1"
+                      onchange="syncHidden('slackSelect','slackTargetId','slackTargetName')">
+                <option value="">Loading channels...</option>
+              </select>
+              <button class="btn btn-primary btn-sm" type="submit">Add</button>
+            </form>
+          </div>
+
+        </div>
+
+        {% else %}
+        <div class="card" style="color:var(--text-muted);text-align:center;padding:3rem">
+          Select an LDAP group on the left to manage its integrations.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+function syncHidden(selectId, idField, nameField) {
+  const sel = document.getElementById(selectId);
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById(idField).value = opt.value;
+  document.getElementById(nameField).value = opt.dataset.name || opt.text;
+}
+
+async function loadDropdown(url, selectId, labelFn) {
+  const sel = document.getElementById(selectId);
+  try {
+    const res = await fetch(url);
+    const items = await res.json();
+    sel.innerHTML = items.length
+      ? items.map(item => `<option value="${item.id || item.slug}" data-name="${labelFn(item)}">${labelFn(item)}</option>`).join('')
+      : '<option value="">None available</option>';
+    syncHidden(selectId,
+      selectId === 'githubSelect' ? 'githubTargetId' : 'slackTargetId',
+      selectId === 'githubSelect' ? 'githubTargetName' : 'slackTargetName');
+  } catch {
+    sel.innerHTML = '<option value="">Failed to load</option>';
+  }
+}
+
+{% if selectedGroup %}
+loadDropdown('/admin/integrations/api/teams',    'githubSelect', t => t.name);
+loadDropdown('/admin/integrations/api/channels', 'slackSelect',  c => c.name);
+{% endif %}
+
+async function triggerSync() {
+  const btn = document.getElementById('syncBtn');
+  const status = document.getElementById('syncStatus');
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+  status.style.display = 'none';
+  try {
+    const res = await fetch('/admin/integrations/sync', { method: 'POST' });
+    const data = await res.json();
+    status.style.display = 'block';
+    if (data.ok) {
+      status.className = 'alert alert-success';
+      status.textContent = `Sync complete — ${data.githubOps} GitHub op(s), ${data.slackOps} Slack op(s)${data.errors ? ', ' + data.errors + ' error(s) (check logs)' : ''}.`;
+    } else {
+      status.className = 'alert alert-error';
+      status.textContent = `Sync failed: ${data.message}`;
+    }
+  } catch (err) {
+    status.style.display = 'block';
+    status.className = 'alert alert-error';
+    status.textContent = `Sync failed: ${err}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sync Integrations';
+  }
+}
+</script>
+{% endblock %}
