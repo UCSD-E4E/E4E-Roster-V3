@@ -36,6 +36,19 @@
           <span class="form-hint">Leave blank for no expiry.</span>
         </div>
 
+        <div class="form-row">
+          <div class="form-group">
+            <label for="githubUsername">GitHub username</label>
+            <input type="text" id="githubUsername" name="githubUsername"
+                   value="{{ user.github_username or '' }}" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="slackUsername">Slack username</label>
+            <input type="text" id="slackUsername" name="slackUsername"
+                   value="{{ user.slack_username or '' }}" autocomplete="off">
+          </div>
+        </div>
+
         <div class="form-group">
           <label>LDAP Groups</label>
           {% if allGroups.length %}

@@ -1,0 +1,34 @@
+display_information:
+  name: E4E Roster Bot
+  description: Syncs Slack workspace members with the E4E lab roster.
+
+features:
+  bot_user:
+    display_name: E4E Roster Bot
+    always_online: false
+  slash_commands:
+    - command: /check
+      description: Check your E4E roster status and link missing accounts
+      should_escape: false
+    - command: /extend
+      description: Extend your E4E account access by 90 days
+      should_escape: false
+
+oauth_config:
+  scopes:
+    bot:
+      - users:read
+      - users:read.email
+      - chat:write
+      - im:write
+      - channels:read
+      - channels:join
+      - channels:manage
+      - groups:read
+      - groups:write
+      - commands
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

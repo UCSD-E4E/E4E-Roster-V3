@@ -29,4 +29,44 @@ E4E is quite a large organization, organizing nearly 100 - 200 people each year.
 ## Backend End Tracking
 TODO
 
+---
 
+## Production VM Configuration
+
+### Port Exposure
+
+Only the main backend should be reachable from the internet. The internal services communicate over the Docker network and must **not** be publicly accessible.
+
+| Service | Port | Exposure |
+|---|---|---|
+| Backend (web UI + API) | 3000 | Public — reverse proxy (nginx/Caddy) |
+| GitHub App | 3001 | Internal only — firewall off |
+| Slack Bot internal API | 3002 | Internal only — firewall off |
+| PostgreSQL | 5432 | Internal only — firewall off |
+
+### Firewall Rules (ufw example)
+
+```bash
+# Allow public web traffic
+ufw allow 80/tcp
+ufw allow 443/tcp
+
+# Block internal service ports from external access
+ufw deny 3001/tcp
+ufw deny 3002/tcp
+ufw deny 5432/tcp
+```
+
+If using Docker's default bridge network, also ensure the Docker daemon is not binding internal ports to `0.0.0.0`. In `docker-compose.yml`, internal services should omit the `ports:` key entirely (they communicate over the internal Docker network by service name) or bind explicitly to `127.0.0.1`:
+
+```yaml
+ports:
+  - "127.0.0.1:3001:3001"   # github-app — localhost only
+  - "127.0.0.1:3002:3002"   # slackbot internal API — localhost only
+```
+
+### Why the Slack Bot Exposes an HTTP Port
+
+The Slack bot uses Socket Mode (outbound WebSocket to Slack) and does not need a public URL. However, it runs a small internal HTTP server on port **3002** used exclusively for service-to-service communication within the Docker network (e.g. the backend queries it for Slack channel lists and triggers channel invites). This port must never be exposed to the internet.
+
+See `docs/decisions.md` for the full Socket Mode rationale.

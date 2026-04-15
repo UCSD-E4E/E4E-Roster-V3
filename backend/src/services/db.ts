@@ -26,6 +26,9 @@ export async function runMigrations(): Promise<void> {
       updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS github_username VARCHAR(100);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS slack_username  VARCHAR(100);
+
     CREATE TABLE IF NOT EXISTS audit_log (
       id               SERIAL PRIMARY KEY,
       actor            VARCHAR(100) NOT NULL,
@@ -33,6 +36,16 @@ export async function runMigrations(): Promise<void> {
       action           VARCHAR(100) NOT NULL,
       details          JSONB,
       created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS group_mappings (
+      id           SERIAL PRIMARY KEY,
+      ldap_group   VARCHAR(255) NOT NULL,
+      service      VARCHAR(20)  NOT NULL CHECK (service IN ('github', 'slack')),
+      target_id    VARCHAR(255) NOT NULL,
+      target_name  VARCHAR(255) NOT NULL,
+      created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+      UNIQUE (ldap_group, service, target_id)
     );
   `);
   console.log('[db] migrations complete');

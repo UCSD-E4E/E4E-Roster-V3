@@ -4,6 +4,7 @@ import { setupPassport } from './auth';
 import { createApp } from './app';
 import { runMigrations } from './services/db';
 import { startSyncSchedule } from './services/sync';
+import { ensureExtendedAttributes } from './services/udm';
 
 async function bootstrap(): Promise<void> {
   const {
@@ -38,6 +39,10 @@ async function bootstrap(): Promise<void> {
   setupPassport(client);
 
   await runMigrations();
+  // Ensure custom LDAP extended attributes exist before first sync
+  await ensureExtendedAttributes().catch((err) =>
+    console.warn('[startup] ensureExtendedAttributes failed (non-fatal):', err),
+  );
   startSyncSchedule();
 
   const app = createApp();

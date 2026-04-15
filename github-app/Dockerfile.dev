@@ -1,0 +1,9 @@
+FROM node:20-slim
+
+WORKDIR /app
+
+COPY github-app/package*.json ./
+RUN npm install
+
+# src and private-keys are mounted as volumes at runtime
+CMD ["npm", "run", "dev"]
