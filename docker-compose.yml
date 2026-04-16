@@ -53,5 +53,19 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  gsuite:
+    build:
+      context: .
+      dockerfile: gsuite/Dockerfile
+    ports:
+      - "127.0.0.1:${GSUITE_INTERNAL_PORT:-3003}:3003"
+    env_file: .env
+    volumes:
+      - ./gsuite/service-account:/app/service-account:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:

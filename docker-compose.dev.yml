@@ -34,6 +34,18 @@ services:
       - github-app
     restart: unless-stopped
 
+  gsuite:
+    build:
+      context: .
+      dockerfile: gsuite/Dockerfile.dev
+    volumes:
+      - ./gsuite/src:/app/src
+      - ./gsuite/service-account:/app/service-account:ro
+      - gsuite_node_modules:/app/node_modules
+    environment:
+      NODE_ENV: dev
+
 volumes:
   backend_node_modules:
   github_app_node_modules:
+  gsuite_node_modules:

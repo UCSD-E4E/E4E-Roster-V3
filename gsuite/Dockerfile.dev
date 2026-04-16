@@ -1,0 +1,9 @@
+FROM node:20-slim
+
+WORKDIR /app
+
+COPY gsuite/package*.json ./
+RUN npm install
+
+# src and service-account key are mounted as volumes at runtime
+CMD ["npm", "run", "dev"]

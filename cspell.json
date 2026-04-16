@@ -1,0 +1,22 @@
+{
+  "version": "0.2",
+  "words": [
+    "gsuite",
+    "slackbot",
+    "slackops",
+    "ldap",
+    "ldapts",
+    "oidc",
+    "smee",
+    "octokit",
+    "nunjucks",
+    "dynaconf",
+    "univention",
+    "authentik",
+    "fernet",
+    "dotenv",
+    "nodemon",
+    "postgres",
+    "postgresql"
+  ]
+}

@@ -48,6 +48,15 @@ export async function runMigrations(): Promise<void> {
       UNIQUE (ldap_group, service, target_id)
     );
 
+    -- Extend group_mappings service CHECK to include google
+    DO $do$
+    BEGIN
+      ALTER TABLE group_mappings DROP CONSTRAINT IF EXISTS group_mappings_service_check;
+      ALTER TABLE group_mappings ADD CONSTRAINT group_mappings_service_check
+        CHECK (service IN ('github', 'slack', 'google'));
+    EXCEPTION WHEN others THEN NULL;
+    END $do$;
+
     CREATE TABLE IF NOT EXISTS projects (
       id          SERIAL PRIMARY KEY,
       name        VARCHAR(255) NOT NULL UNIQUE,

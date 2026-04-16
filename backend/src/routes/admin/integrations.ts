@@ -63,31 +63,35 @@ router.post('/sync', async (_req: Request, res: Response) => {
   }
 });
 
-async function runIntegrationSync(): Promise<{ githubOps: number; slackOps: number; errors: number }> {
+async function runIntegrationSync(): Promise<{ githubOps: number; slackOps: number; googleOps: number; errors: number }> {
   const githubBase = process.env.GITHUB_APP_URL ?? 'http://github-app:3001';
   const slackBase  = process.env.SLACK_BOT_URL  ?? 'http://slackbot:3002';
+  const gsuiteBase = process.env.GSUITE_URL      ?? 'http://gsuite:3003';
 
   type MappingRow = { ldap_group: string; service: string; target_id: string };
-  type UserRow    = { slack_username: string | null; github_username: string | null; ldap_groups: string[] };
+  type UserRow    = { email: string | null; slack_username: string | null; github_username: string | null; ldap_groups: string[] };
 
   const [{ rows: mappings }, { rows: users }] = await Promise.all([
     db.query<MappingRow>('SELECT ldap_group, service, target_id FROM group_mappings'),
-    db.query<UserRow>('SELECT slack_username, github_username, ldap_groups FROM users'),
+    db.query<UserRow>('SELECT email, slack_username, github_username, ldap_groups FROM users'),
   ]);
 
-  if (mappings.length === 0) return { githubOps: 0, slackOps: 0, errors: 0 };
+  if (mappings.length === 0) return { githubOps: 0, slackOps: 0, googleOps: 0, errors: 0 };
 
   // Index mappings by group+service
   const githubByGroup = new Map<string, string[]>();
   const slackByGroup  = new Map<string, string[]>();
+  const googleByGroup = new Map<string, string[]>();
   for (const m of mappings) {
-    const map = m.service === 'github' ? githubByGroup : slackByGroup;
+    const map = m.service === 'github' ? githubByGroup
+              : m.service === 'slack'  ? slackByGroup
+              :                          googleByGroup;
     const list = map.get(m.ldap_group) ?? [];
     list.push(m.target_id);
     map.set(m.ldap_group, list);
   }
 
-  let githubOps = 0, slackOps = 0, errors = 0;
+  let githubOps = 0, slackOps = 0, googleOps = 0, errors = 0;
 
   for (const user of users) {
     for (const group of (user.ldap_groups ?? [])) {
@@ -113,11 +117,22 @@ async function runIntegrationSync(): Promise<{ githubOps: number; slackOps: numb
           if (r?.ok) slackOps++; else errors++;
         }
       }
+      // Google Group memberships
+      if (user.email) {
+        for (const groupEmail of (googleByGroup.get(group) ?? [])) {
+          const r = await fetch(`${gsuiteBase}/invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groupEmail, userEmail: user.email }),
+          }).catch(() => null);
+          if (r?.ok) googleOps++; else errors++;
+        }
+      }
     }
   }
 
-  console.log(`[integrations-sync] done — ${githubOps} GitHub ops, ${slackOps} Slack ops, ${errors} errors`);
-  return { githubOps, slackOps, errors };
+  console.log(`[integrations-sync] done — ${githubOps} GitHub ops, ${slackOps} Slack ops, ${googleOps} Google ops, ${errors} errors`);
+  return { githubOps, slackOps, googleOps, errors };
 }
 
 // ── API proxies (used by the page's JS dropdowns) ─────────────────
@@ -130,6 +145,17 @@ router.get('/api/teams', async (_req: Request, res: Response) => {
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: 'GitHub app unreachable', detail: String(err) });
+  }
+});
+
+router.get('/api/google-groups', async (_req: Request, res: Response) => {
+  try {
+    const base = process.env.GSUITE_URL ?? 'http://gsuite:3003';
+    const r = await fetch(`${base}/groups`);
+    const data = await r.json();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'GSuite service unreachable', detail: String(err) });
   }
 });
 
