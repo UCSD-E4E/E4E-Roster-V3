@@ -1,6 +1,22 @@
 # TODO
 
+## Notes from Chris
+PL doesn't set expiry
+Slack check flow
+
+
+Projects have all linked projects
+User Basic info changes
+
+
+Student availblities - Timely 
+Zoom Integreation
+
+
+
+
 ## New User Testing Checklist
+
 
 When adding a new user, verify the following three integrations work end-to-end:
 
