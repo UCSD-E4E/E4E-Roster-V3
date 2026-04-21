@@ -6,6 +6,7 @@ import path from 'path';
 
 import authRouter from './routes/auth';
 import dashboardRouter from './routes/dashboard';
+import accountRouter from './routes/account';
 import adminRouter from './routes/admin/index';
 import plRouter from './routes/pl/index';
 
@@ -49,6 +50,7 @@ export function createApp(): express.Application {
 
   app.use('/', authRouter);
   app.use('/dashboard', dashboardRouter);
+  app.use('/account', accountRouter);
   app.use('/admin', adminRouter);
   app.use('/pl', plRouter);
 

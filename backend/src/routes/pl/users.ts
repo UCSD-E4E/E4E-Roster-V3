@@ -188,14 +188,12 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
     [mergedGroups, cleanGithub, cleanSlack, cleanSecondary, cleanPhone, isDisabled, username],
   );
 
-  const ldapFields: { slackId?: string | null; githubUsername?: string | null } = {};
-  if (cleanSlack !== null) ldapFields.slackId = cleanSlack;
-  if (cleanGithub !== null) ldapFields.githubUsername = cleanGithub;
-  if (Object.keys(ldapFields).length > 0) {
-    udm.updateUserLdapFields(username, ldapFields).catch((err) =>
-      console.warn(`[pl] LDAP write-back failed for ${username}:`, err),
-    );
-  }
+  udm.updateUserLdapFields(username, {
+    ...(cleanSlack  !== null && { slackId: cleanSlack }),
+    ...(cleanGithub !== null && { githubUsername: cleanGithub }),
+    secondaryEmail: cleanSecondary,
+    phone: cleanPhone,
+  }).catch((err) => console.warn(`[pl] LDAP write-back failed for ${username}:`, err));
 
   if (cleanGithub) triggerGithubInvite(cleanGithub);
 

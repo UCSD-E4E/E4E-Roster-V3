@@ -144,6 +144,12 @@ const EXTENDED_ATTRS = [
     shortDescription: 'E4E Lab Role',
     longDescription: 'Role within the E4E lab (e.g. student, staff)',
   },
+  {
+    name: 'e4eSecondaryEmail',
+    ldapMapping: 'univentionFreeAttribute4',
+    shortDescription: 'E4E Long-term Email',
+    longDescription: 'Personal email that persists after graduation (any domain)',
+  },
 ];
 
 /**
@@ -337,7 +343,13 @@ export async function updateUserGroups(
  */
 export async function updateUserLdapFields(
   username: string,
-  fields: { slackId?: string | null; githubUsername?: string | null; role?: string | null },
+  fields: {
+    slackId?: string | null;
+    githubUsername?: string | null;
+    role?: string | null;
+    secondaryEmail?: string | null;
+    phone?: string | null;
+  },
 ): Promise<ProvisionResult> {
   const userRes = await udmFetch(
     `/users/user/?filter=${encodeURIComponent(`uid=${username}`)}&properties=dn`,
@@ -350,10 +362,13 @@ export async function updateUserLdapFields(
   const getRes = await udmFetch(`/users/user/${encodeURIComponent(userObj.dn)}`);
   const etag = getRes.headers.get('etag') ?? '*';
 
-  const props: Record<string, string | null> = {};
+  const props: Record<string, string | string[]> = {};
   if (fields.slackId !== undefined) props['e4eSlackId'] = fields.slackId ?? '';
   if (fields.githubUsername !== undefined) props['e4eGithubUsername'] = fields.githubUsername ?? '';
   if (fields.role !== undefined) props['LabRole'] = fields.role ?? '';
+  if (fields.secondaryEmail !== undefined) props['e4eSecondaryEmail'] = fields.secondaryEmail ?? '';
+  if (fields.phone !== undefined)
+    props['mobileTelephoneNumber'] = fields.phone ? [fields.phone] : [];
 
   const patchRes = await udmFetch(
     `/users/user/${encodeURIComponent(userObj.dn)}`,

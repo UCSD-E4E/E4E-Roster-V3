@@ -104,15 +104,13 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   );
 
   const cleanRole = role || null;
-  const ldapFields: { slackId?: string | null; githubUsername?: string | null; role?: string | null } = {};
-  if (cleanSlack !== null) ldapFields.slackId = cleanSlack;
-  if (cleanGithub !== null) ldapFields.githubUsername = cleanGithub;
-  if (cleanRole !== null) ldapFields.role = cleanRole;
-  if (Object.keys(ldapFields).length > 0) {
-    udm.updateUserLdapFields(username, ldapFields).catch((err) =>
-      console.warn(`[admin] LDAP write-back failed for ${username}:`, err),
-    );
-  }
+  udm.updateUserLdapFields(username, {
+    ...(cleanSlack    !== null && { slackId: cleanSlack }),
+    ...(cleanGithub   !== null && { githubUsername: cleanGithub }),
+    ...(cleanRole     !== null && { role: cleanRole }),
+    secondaryEmail: cleanSecondary,
+    phone: cleanPhone,
+  }).catch((err) => console.warn(`[admin] LDAP write-back failed for ${username}:`, err));
 
   if (cleanGithub) triggerGithubInvite(cleanGithub);
 
