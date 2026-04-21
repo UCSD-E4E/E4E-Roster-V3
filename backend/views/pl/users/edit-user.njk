@@ -28,6 +28,16 @@
           </div>
 
           <div style="margin-bottom:1rem">
+            <label class="form-label">Long-term email <span class="text-muted" style="font-size:.8rem">(personal, persists after graduation)</span></label>
+            <input type="email" name="secondaryEmail" class="form-input" value="{{ user.secondary_email or '' }}" placeholder="personal@gmail.com">
+          </div>
+
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Phone number</label>
+            <input type="tel" name="phone" class="form-input" value="{{ user.phone or '' }}" placeholder="+1 555 000 0000">
+          </div>
+
+          <div style="margin-bottom:1rem">
             <label class="form-label">GitHub Username</label>
             <input type="text" name="githubUsername" class="form-input" value="{{ user.github_username or '' }}" placeholder="github-handle">
           </div>
