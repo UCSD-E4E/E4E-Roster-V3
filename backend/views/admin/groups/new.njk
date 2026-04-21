@@ -1,0 +1,116 @@
+{% extends "layout.njk" %}
+{% block title %}New LDAP Group{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <h2>Create LDAP Group</h2>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error" style="max-width:640px;margin-bottom:1rem">{{ error }}</div>
+    {% endif %}
+
+    <div class="card" style="max-width:640px">
+
+      <form method="POST" action="/admin/groups">
+
+        <div class="form-group">
+          <label for="groupName">Group name <span class="text-muted">(required)</span></label>
+          <input type="text" id="groupName" name="groupName" required autocomplete="off"
+                 placeholder="e.g. e4e-radio-collar">
+          <span class="form-hint">This becomes the LDAP CN. Use lowercase with hyphens.</span>
+        </div>
+
+        <hr style="margin:1.5rem 0;border:none;border-top:1px solid var(--border)">
+
+        <h4 style="margin:0 0 1rem">Optional Assignments</h4>
+
+        <div class="form-group">
+          <label for="projectId">Project</label>
+          <select id="projectId" name="projectId">
+            <option value="">— none —</option>
+            {% for p in projects %}
+            <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+          </select>
+          <span class="form-hint">Adds this group to the selected project's group list.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="githubTeam">GitHub team</label>
+          <select id="githubTeam" name="githubTeam">
+            <option value="">— none —</option>
+            {% for t in teams %}
+            <option value="{{ t.slug }}|{{ t.name }}">{{ t.name }}</option>
+            {% endfor %}
+          </select>
+          {% if not teams.length %}
+          <span class="form-hint" style="color:var(--text-muted)">GitHub app unreachable — can assign later via Integrations.</span>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="slackChannel">Slack channel</label>
+          <select id="slackChannel" name="slackChannel">
+            <option value="">— none —</option>
+            {% for c in channels %}
+            <option value="{{ c.id }}|{{ c.name }}">#{{ c.name }}</option>
+            {% endfor %}
+          </select>
+          {% if not channels.length %}
+          <span class="form-hint" style="color:var(--text-muted)">Slackbot unreachable — can assign later via Integrations.</span>
+          {% endif %}
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create Group</button>
+          <a href="/admin/integrations" class="btn btn-ghost">Cancel</a>
+        </div>
+
+      </form>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  // Split the combined "slug|name" select values before submit
+  document.querySelector('form').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const githubSel = document.getElementById('githubTeam');
+    const slackSel  = document.getElementById('slackChannel');
+
+    const githubVal  = githubSel.value;
+    const slackVal   = slackSel.value;
+
+    const form = e.target;
+
+    if (githubVal) {
+      const [slug, ...rest] = githubVal.split('|');
+      appendHidden(form, 'githubTeamSlug', slug);
+      appendHidden(form, 'githubTeamName', rest.join('|'));
+    }
+    if (slackVal) {
+      const [id, ...rest] = slackVal.split('|');
+      appendHidden(form, 'slackChannelId', id);
+      appendHidden(form, 'slackChannelName', rest.join('|'));
+    }
+
+    githubSel.name = '';
+    slackSel.name  = '';
+    form.submit();
+  });
+
+  function appendHidden(form, name, value) {
+    const input = document.createElement('input');
+    input.type  = 'hidden';
+    input.name  = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+</script>
+{% endblock %}

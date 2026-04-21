@@ -369,6 +369,36 @@ export async function updateUserLdapFields(
   return { status: 'success', message: `Updated LDAP fields for ${username}` };
 }
 
+export async function createGroup(name: string): Promise<ProvisionResult> {
+  const existing = await udmFetch(`/groups/group/?filter=${encodeURIComponent(`cn=${name}`)}&properties=dn`);
+  if (existing.ok) {
+    const data = await existing.json() as UdmCollection;
+    if ((data._embedded?.['udm:object'] ?? []).length > 0) {
+      return { status: 'already_exists', message: `Group "${name}" already exists` };
+    }
+  }
+
+  const position = process.env.UDM_GROUPS_POSITION!;
+  const res = await udmFetch(
+    '/groups/group/',
+    'POST',
+    JSON.stringify({ properties: { name }, position }),
+  );
+
+  if (res.ok || res.status === 201) {
+    return { status: 'success', message: `Created group "${name}"` };
+  }
+  let message = res.statusText;
+  try {
+    const err = await res.json() as Record<string, unknown>;
+    const errObj = err['error'];
+    if (errObj && typeof errObj === 'object') {
+      message = (errObj as Record<string, unknown>)['message'] as string || message;
+    }
+  } catch { /* ignore */ }
+  return { status: 'failed', message };
+}
+
 export async function listGroups(): Promise<string[]> {
   const res = await udmFetch('/groups/group/?properties=name&page_size=500');
   if (!res.ok) throw new Error(`UDM error ${res.status}: ${res.statusText}`);
