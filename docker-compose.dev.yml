@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile.dev
+    ports:
+      - "${PORT:-3000}:3000"    # override to bind all interfaces in dev
     volumes:
       - ./backend/src:/app/src                 # hot reload on source changes
       - ./backend/views:/app/views             # hot reload on template changes
@@ -22,6 +24,12 @@ services:
       - github_app_node_modules:/app/node_modules
     environment:
       NODE_ENV: dev
+
+  outline-connector:
+    # In dev, expose the port directly — no Traefik running locally.
+    # Point Outline's webhook at http://localhost:8430/sync (or use a tunnel).
+    ports:
+      - "127.0.0.1:8430:80"
 
   # Forwards GitHub webhooks from smee.io to the github-app container (dev only)
   smee:

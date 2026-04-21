@@ -3,8 +3,10 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    # Port binding is useful for direct access / health checks.
+    # Once Traefik is the sole entry point in production, this can be removed.
     ports:
-      - "${PORT:-3000}:3000"
+      - "127.0.0.1:${PORT:-3000}:3000"
     env_file: .env
     environment:
       - VIEWS_DIR=/app/views
@@ -13,6 +15,15 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - default
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.roster.rule=Host(`${ROSTER_HOST}`)"
+      - "traefik.http.routers.roster.entrypoints=websecure"
+      - "traefik.http.routers.roster.tls.certresolver=letsencrypt"
+      - "traefik.http.services.roster.loadbalancer.server.port=3000"
 
   db:
     image: postgres:16-alpine
@@ -53,5 +64,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  outline-connector:
+    image: burritosoftware/outline-authentik-connector:latest
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.outline-connector.rule=Host(`${OUTLINE_CONNECTOR_HOST}`)"
+      - "traefik.http.routers.outline-connector.entrypoints=websecure"
+      - "traefik.http.routers.outline-connector.tls.certresolver=letsencrypt"
+      - "traefik.http.services.outline-connector.loadbalancer.server.port=80"
+
 volumes:
   postgres_data:
+
+networks:
+  default: {}
+  traefik_proxy:
+    external: true
