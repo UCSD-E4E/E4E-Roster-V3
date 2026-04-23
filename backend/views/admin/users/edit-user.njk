@@ -36,6 +36,20 @@
           <span class="form-hint">Leave blank for no expiry.</span>
         </div>
 
+        <div class="form-group">
+          <label for="secondaryEmail">Long-term email <span class="text-muted">(personal, persists after graduation)</span></label>
+          <input type="email" id="secondaryEmail" name="secondaryEmail"
+                 value="{{ user.secondary_email or '' }}" autocomplete="off"
+                 placeholder="personal@gmail.com">
+        </div>
+
+        <div class="form-group">
+          <label for="phone">Phone number</label>
+          <input type="tel" id="phone" name="phone"
+                 value="{{ user.phone or '' }}" autocomplete="off"
+                 placeholder="+1 555 000 0000">
+        </div>
+
         <div class="form-row">
           <div class="form-group">
             <label for="githubUsername">GitHub username</label>

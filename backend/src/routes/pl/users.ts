@@ -19,7 +19,6 @@ async function requireProjectAccess(req: Request, res: Response, next: NextFunct
 
   const userGroups: string[] = req.user?.groups ?? [];
 
-  // Admins bypass the group check
   if (req.user?.isAdmin) {
     const { rows } = await db.query<{ id: number; name: string }>(
       `SELECT id, name FROM projects WHERE id = $1`, [projectId],
@@ -47,13 +46,18 @@ router.use(requireProjectAccess);
 
 const adminGroup = () => process.env.ADMIN_GROUP ?? 'e4e-admin';
 
-/** Returns the LDAP groups that belong to a given project */
 async function projectGroups(projectId: number): Promise<string[]> {
   const { rows } = await db.query<{ ldap_group: string }>(
     `SELECT ldap_group FROM project_ldap_groups WHERE project_id = $1 ORDER BY ldap_group`,
     [projectId],
   );
   return rows.map((r) => r.ldap_group);
+}
+
+function ninetyDaysFromNow(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 90);
+  return d.toISOString().slice(0, 10);
 }
 
 function triggerGithubInvite(githubUsername: string): void {
@@ -99,7 +103,7 @@ router.get('/:username/edit', async (req: Request, res: Response) => {
   const projectId = parseInt(req.params.projectId, 10);
 
   const { rows } = await db.query(
-    `SELECT username, first_name, last_name, email, role,
+    `SELECT username, first_name, last_name, email, secondary_email, phone, role,
             TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
             disabled, ldap_groups, github_username, slack_username
      FROM users WHERE username = $1`,
@@ -109,7 +113,6 @@ router.get('/:username/edit', async (req: Request, res: Response) => {
 
   const user = rows[0] as { ldap_groups: string[]; [k: string]: unknown };
 
-  // PLs cannot edit admin users
   if ((user.ldap_groups as string[]).includes(adminGroup())) {
     return res.status(403).send('Project leads cannot edit admin users.');
   }
@@ -127,7 +130,6 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
   const projectId = parseInt(req.params.projectId, 10);
 
-  // Re-verify the user isn't an admin
   const { rows } = await db.query<{ ldap_groups: string[] }>(
     `SELECT ldap_groups FROM users WHERE username = $1`, [username],
   );
@@ -136,7 +138,8 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
     return res.status(403).send('Project leads cannot edit admin users.');
   }
 
-  const { expiryDate, githubUsername, slackUsername, disabled } = req.body as Record<string, string>;
+  const { githubUsername, slackUsername, secondaryEmail, phone, disabled } =
+    req.body as Record<string, string>;
   const selectedProjectGroups: string[] = [req.body.groups ?? []].flat();
   const projGroups = await projectGroups(projectId);
 
@@ -144,19 +147,15 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   const nonProjectGroups = rows[0].ldap_groups.filter((g) => !projGroups.includes(g));
   const mergedGroups = [...new Set([...nonProjectGroups, ...selectedProjectGroups])];
 
-  // Update groups in UDM
   const groupResult = await udm.updateUserGroups(username, mergedGroups);
   let udmError: string | null = null;
   if (groupResult.status === 'failed') {
     udmError = groupResult.message;
-  } else {
-    const expiryResult = await udm.updateUserExpiry(username, expiryDate ?? '');
-    if (expiryResult.status === 'failed') udmError = expiryResult.message;
   }
 
   if (udmError) {
     const { rows: userRows } = await db.query(
-      `SELECT username, first_name, last_name, email, role,
+      `SELECT username, first_name, last_name, email, secondary_email, phone, role,
               TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
               disabled, ldap_groups, github_username, slack_username
        FROM users WHERE username = $1`,
@@ -172,29 +171,29 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
 
   const cleanGithub = githubUsername?.trim() || null;
   const cleanSlack = slackUsername?.trim() || null;
+  const cleanSecondary = secondaryEmail?.trim().toLowerCase() || null;
+  const cleanPhone = phone?.trim() || null;
   const isDisabled = disabled === 'true';
 
   await db.query(
     `UPDATE users SET
-       expiry_date     = $1,
-       ldap_groups     = $2,
-       github_username = $3,
-       slack_username  = $4,
-       disabled        = $5,
-       updated_at      = NOW()
-     WHERE username = $6`,
-    [expiryDate || null, mergedGroups, cleanGithub, cleanSlack, isDisabled, username],
+       ldap_groups      = $1,
+       github_username  = $2,
+       slack_username   = $3,
+       secondary_email  = $4,
+       phone            = $5,
+       disabled         = $6,
+       updated_at       = NOW()
+     WHERE username = $7`,
+    [mergedGroups, cleanGithub, cleanSlack, cleanSecondary, cleanPhone, isDisabled, username],
   );
 
-  // LDAP extended attribute write-back (non-fatal)
-  const ldapFields: { slackId?: string | null; githubUsername?: string | null } = {};
-  if (cleanSlack !== null) ldapFields.slackId = cleanSlack;
-  if (cleanGithub !== null) ldapFields.githubUsername = cleanGithub;
-  if (Object.keys(ldapFields).length > 0) {
-    udm.updateUserLdapFields(username, ldapFields).catch((err) =>
-      console.warn(`[pl] LDAP write-back failed for ${username}:`, err),
-    );
-  }
+  udm.updateUserLdapFields(username, {
+    ...(cleanSlack  !== null && { slackId: cleanSlack }),
+    ...(cleanGithub !== null && { githubUsername: cleanGithub }),
+    secondaryEmail: cleanSecondary,
+    phone: cleanPhone,
+  }).catch((err) => console.warn(`[pl] LDAP write-back failed for ${username}:`, err));
 
   if (cleanGithub) triggerGithubInvite(cleanGithub);
 
@@ -212,13 +211,18 @@ router.get('/new', async (req: Request, res: Response) => {
 
 router.post('/new/sso', async (req: Request, res: Response) => {
   const projectId = parseInt(req.params.projectId, 10);
-  const { firstName, lastName, email, expiryDate, ldapGroups } =
+  const { firstName, lastName, email, secondaryEmail, phone, ldapGroups } =
     req.body as Record<string, string | string[]>;
 
   const projGroups = await projectGroups(projectId);
   const cleanEmail = (email as string).trim().toLowerCase();
   const cleanFirst = (firstName as string).trim();
   const cleanLast = (lastName as string).trim();
+  const cleanSecondary = (secondaryEmail as string)?.trim().toLowerCase() || null;
+  const cleanPhone = (phone as string)?.trim() || null;
+
+  // Enforce 90-day expiry server-side — ignore any submitted value
+  const expiryDate = ninetyDaysFromNow();
 
   // Only allow groups within this project
   const chosenGroups = [ldapGroups ?? []].flat().filter((g) => projGroups.includes(g));
@@ -228,8 +232,8 @@ router.post('/new/sso', async (req: Request, res: Response) => {
     firstName: cleanFirst,
     lastName: cleanLast,
     email: cleanEmail,
-    role: 'student', // PLs cannot set admin role
-    expiryDate: expiryDate as string,
+    role: 'student',
+    expiryDate,
     ldapGroups: chosenGroups,
     githubTeams: [],
     serverGroups: [],
@@ -239,10 +243,12 @@ router.post('/new/sso', async (req: Request, res: Response) => {
 
   if (result.status === 'success') {
     await db.query(
-      `INSERT INTO users (username, first_name, last_name, email, role, expiry_date, ldap_groups, last_synced_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+      `INSERT INTO users
+         (username, first_name, last_name, email, secondary_email, phone, role, expiry_date, ldap_groups, last_synced_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
        ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role, updated_at = NOW()`,
-      [user.username, user.firstName, user.lastName, user.email, user.role, user.expiryDate, user.ldapGroups],
+      [user.username, user.firstName, user.lastName, user.email,
+       cleanSecondary, cleanPhone, user.role, user.expiryDate, user.ldapGroups],
     );
   }
 

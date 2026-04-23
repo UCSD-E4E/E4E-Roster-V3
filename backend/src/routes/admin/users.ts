@@ -33,11 +33,11 @@ router.post('/sync', async (_req: Request, res: Response) => {
   }
 });
 
-// ── Edit user (role, expiry, groups) ─────────────────────────────
+// ── Edit user ─────────────────────────────────────────────────────
 router.get('/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
   const { rows } = await db.query(
-    `SELECT username, first_name, last_name, email, role,
+    `SELECT username, first_name, last_name, email, secondary_email, phone, role,
             TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
             disabled, ldap_groups, github_username, slack_username
      FROM users WHERE username = $1`,
@@ -57,13 +57,12 @@ router.get('/:username/edit', async (req: Request, res: Response) => {
 
 router.post('/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
-  const { role, expiryDate, githubUsername, slackUsername } = req.body as Record<string, string>;
+  const { role, expiryDate, githubUsername, slackUsername, secondaryEmail, phone } =
+    req.body as Record<string, string>;
   const selectedGroups: string[] = [req.body.groups ?? []].flat();
 
-  // Update groups in UDM
   const groupResult = await udm.updateUserGroups(username, selectedGroups);
 
-  // Update expiry in UDM (always — empty string clears it)
   let udmError: string | null = null;
   if (groupResult.status === 'failed') {
     udmError = groupResult.message;
@@ -74,7 +73,7 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
 
   if (udmError) {
     const { rows } = await db.query(
-      `SELECT username, first_name, last_name, email, role,
+      `SELECT username, first_name, last_name, email, secondary_email, phone, role,
               TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
               disabled, ldap_groups, github_username, slack_username
        FROM users WHERE username = $1`,
@@ -86,43 +85,40 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
 
   const cleanGithub = githubUsername?.trim() || null;
   const cleanSlack = slackUsername?.trim() || null;
+  const cleanSecondary = secondaryEmail?.trim().toLowerCase() || null;
+  const cleanPhone = phone?.trim() || null;
 
-  // Update DB immediately
   await db.query(
     `UPDATE users SET
-       role            = $1,
-       expiry_date     = $2,
-       ldap_groups     = $3,
-       github_username = $4,
-       slack_username  = $5,
-       updated_at      = NOW()
-     WHERE username = $6`,
-    [role || null, expiryDate || null, selectedGroups, cleanGithub, cleanSlack, username],
+       role             = $1,
+       expiry_date      = $2,
+       ldap_groups      = $3,
+       github_username  = $4,
+       slack_username   = $5,
+       secondary_email  = $6,
+       phone            = $7,
+       updated_at       = NOW()
+     WHERE username = $8`,
+    [role || null, expiryDate || null, selectedGroups, cleanGithub, cleanSlack,
+     cleanSecondary, cleanPhone, username],
   );
 
-  // Write Slack/GitHub/role back to LDAP extended attributes (non-fatal)
   const cleanRole = role || null;
-  const ldapFields: { slackId?: string | null; githubUsername?: string | null; role?: string | null } = {};
-  if (cleanSlack !== null) ldapFields.slackId = cleanSlack;
-  if (cleanGithub !== null) ldapFields.githubUsername = cleanGithub;
-  if (cleanRole !== null) ldapFields.role = cleanRole;
-  if (Object.keys(ldapFields).length > 0) {
-    udm.updateUserLdapFields(username, ldapFields).catch((err) =>
-      console.warn(`[admin] LDAP write-back failed for ${username}:`, err),
-    );
-  }
+  udm.updateUserLdapFields(username, {
+    ...(cleanSlack    !== null && { slackId: cleanSlack }),
+    ...(cleanGithub   !== null && { githubUsername: cleanGithub }),
+    ...(cleanRole     !== null && { role: cleanRole }),
+    secondaryEmail: cleanSecondary,
+    phone: cleanPhone,
+  }).catch((err) => console.warn(`[admin] LDAP write-back failed for ${username}:`, err));
 
-  // Trigger immediate GitHub org invite if a GitHub username was set (non-fatal)
-  if (cleanGithub) {
-    triggerGithubInvite(cleanGithub);
-  }
+  if (cleanGithub) triggerGithubInvite(cleanGithub);
 
   res.redirect('/admin/users');
 });
 
 // ── New user wizard ───────────────────────────────────────────────
 
-// Step 1: SSO form
 router.get('/new', async (req: Request, res: Response) => {
   delete req.session.wizard;
 
@@ -136,14 +132,15 @@ router.get('/new', async (req: Request, res: Response) => {
   res.render('admin/users/new/step1', { groups });
 });
 
-// Step 1 submit: create SSO account
 router.post('/new/sso', async (req: Request, res: Response) => {
-  const { firstName, lastName, email, role, expiryDate, ldapGroups } =
+  const { firstName, lastName, email, secondaryEmail, phone, role, expiryDate, ldapGroups } =
     req.body as Record<string, string | string[]>;
 
   const cleanEmail = (email as string).trim().toLowerCase();
   const cleanFirst = (firstName as string).trim();
   const cleanLast = (lastName as string).trim();
+  const cleanSecondary = (secondaryEmail as string)?.trim().toLowerCase() || null;
+  const cleanPhone = (phone as string)?.trim() || null;
 
   const user: NewUser = {
     username: generateUsername(cleanFirst, cleanLast, cleanEmail),
@@ -159,16 +156,15 @@ router.post('/new/sso', async (req: Request, res: Response) => {
 
   const result = await udm.createUser(user);
 
-  // Persist to DB on success so the roster is up-to-date immediately
   if (result.status === 'success') {
     await db.query(
-      `INSERT INTO users (username, first_name, last_name, email, role, expiry_date, ldap_groups, last_synced_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
-       ON CONFLICT (username) DO UPDATE SET
-         role = EXCLUDED.role, updated_at = NOW()`,
-      [user.username, user.firstName, user.lastName, user.email, user.role, user.expiryDate, user.ldapGroups],
+      `INSERT INTO users
+         (username, first_name, last_name, email, secondary_email, phone, role, expiry_date, ldap_groups, last_synced_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+       ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role, updated_at = NOW()`,
+      [user.username, user.firstName, user.lastName, user.email,
+       cleanSecondary, cleanPhone, user.role, user.expiryDate, user.ldapGroups],
     );
-    // Write role to LDAP extended attribute immediately (non-fatal)
     if (user.role) {
       udm.updateUserLdapFields(user.username, { role: user.role }).catch((err) =>
         console.warn(`[wizard] LDAP role write-back failed for ${user.username}:`, err),
@@ -185,7 +181,6 @@ router.post('/new/sso', async (req: Request, res: Response) => {
   });
 });
 
-// Step 2: GitHub + Slack
 router.get('/new/github-slack', (req: Request, res: Response) => {
   if (!req.session.wizard?.steps.sso) return res.redirect('/admin/users/new');
   res.render('admin/users/new/step2', { wizard: req.session.wizard });
@@ -206,7 +201,6 @@ router.post('/new/github-slack', async (req: Request, res: Response) => {
     [cleanGithub, cleanSlack, username],
   );
 
-  // Write to LDAP extended attributes (non-fatal — user can be linked later)
   if (cleanGithub || cleanSlack) {
     const ldapFields: { slackId?: string | null; githubUsername?: string | null } = {};
     if (cleanSlack) ldapFields.slackId = cleanSlack;
@@ -216,15 +210,11 @@ router.post('/new/github-slack', async (req: Request, res: Response) => {
     );
   }
 
-  // Trigger immediate GitHub org invite (non-fatal)
-  if (cleanGithub) {
-    triggerGithubInvite(cleanGithub);
-  }
+  if (cleanGithub) triggerGithubInvite(cleanGithub);
 
   res.redirect('/admin/users/new/server');
 });
 
-// Step 3: Server access (stub)
 router.get('/new/server', (req: Request, res: Response) => {
   if (!req.session.wizard?.steps.sso) return res.redirect('/admin/users/new');
   res.render('admin/users/new/step3', { wizard: req.session.wizard });

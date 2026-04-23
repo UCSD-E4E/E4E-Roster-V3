@@ -144,6 +144,12 @@ const EXTENDED_ATTRS = [
     shortDescription: 'E4E Lab Role',
     longDescription: 'Role within the E4E lab (e.g. student, staff)',
   },
+  {
+    name: 'e4eSecondaryEmail',
+    ldapMapping: 'univentionFreeAttribute4',
+    shortDescription: 'E4E Long-term Email',
+    longDescription: 'Personal email that persists after graduation (any domain)',
+  },
 ];
 
 /**
@@ -337,7 +343,13 @@ export async function updateUserGroups(
  */
 export async function updateUserLdapFields(
   username: string,
-  fields: { slackId?: string | null; githubUsername?: string | null; role?: string | null },
+  fields: {
+    slackId?: string | null;
+    githubUsername?: string | null;
+    role?: string | null;
+    secondaryEmail?: string | null;
+    phone?: string | null;
+  },
 ): Promise<ProvisionResult> {
   const userRes = await udmFetch(
     `/users/user/?filter=${encodeURIComponent(`uid=${username}`)}&properties=dn`,
@@ -350,10 +362,13 @@ export async function updateUserLdapFields(
   const getRes = await udmFetch(`/users/user/${encodeURIComponent(userObj.dn)}`);
   const etag = getRes.headers.get('etag') ?? '*';
 
-  const props: Record<string, string | null> = {};
+  const props: Record<string, string | string[]> = {};
   if (fields.slackId !== undefined) props['e4eSlackId'] = fields.slackId ?? '';
   if (fields.githubUsername !== undefined) props['e4eGithubUsername'] = fields.githubUsername ?? '';
   if (fields.role !== undefined) props['LabRole'] = fields.role ?? '';
+  if (fields.secondaryEmail !== undefined) props['e4eSecondaryEmail'] = fields.secondaryEmail ?? '';
+  if (fields.phone !== undefined)
+    props['mobileTelephoneNumber'] = fields.phone ? [fields.phone] : [];
 
   const patchRes = await udmFetch(
     `/users/user/${encodeURIComponent(userObj.dn)}`,
@@ -367,6 +382,36 @@ export async function updateUserLdapFields(
     return { status: 'failed', message: `Failed to update LDAP fields for ${username}: ${text.slice(0, 200)}` };
   }
   return { status: 'success', message: `Updated LDAP fields for ${username}` };
+}
+
+export async function createGroup(name: string): Promise<ProvisionResult> {
+  const existing = await udmFetch(`/groups/group/?filter=${encodeURIComponent(`cn=${name}`)}&properties=dn`);
+  if (existing.ok) {
+    const data = await existing.json() as UdmCollection;
+    if ((data._embedded?.['udm:object'] ?? []).length > 0) {
+      return { status: 'already_exists', message: `Group "${name}" already exists` };
+    }
+  }
+
+  const position = process.env.UDM_GROUPS_POSITION!;
+  const res = await udmFetch(
+    '/groups/group/',
+    'POST',
+    JSON.stringify({ properties: { name }, position }),
+  );
+
+  if (res.ok || res.status === 201) {
+    return { status: 'success', message: `Created group "${name}"` };
+  }
+  let message = res.statusText;
+  try {
+    const err = await res.json() as Record<string, unknown>;
+    const errObj = err['error'];
+    if (errObj && typeof errObj === 'object') {
+      message = (errObj as Record<string, unknown>)['message'] as string || message;
+    }
+  } catch { /* ignore */ }
+  return { status: 'failed', message };
 }
 
 export async function listGroups(): Promise<string[]> {

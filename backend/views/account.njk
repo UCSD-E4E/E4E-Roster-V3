@@ -1,0 +1,112 @@
+{% extends "layout.njk" %}
+{% block title %}My Account — E4E Roster{% endblock %}
+{% block body %}
+<div class="app-layout">
+  <header class="app-header">
+    <div class="app-header-inner">
+      <span class="app-brand">E4E Roster</span>
+      <nav class="app-nav">
+        {% if user.isAdmin %}
+        <a href="/admin/users">Admin</a>
+        {% endif %}
+        {% if user.isProjectLead %}
+        <a href="/pl/projects">Project Lead</a>
+        {% endif %}
+        <a href="/dashboard">Dashboard</a>
+        <span class="nav-user">{{ user.name or user.username }}</span>
+        <form method="POST" action="/logout" style="display:inline">
+          <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
+        </form>
+      </nav>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <div class="page-header">
+      <h2>My Account</h2>
+    </div>
+
+    {% if saved %}
+    <div class="alert alert-success" style="max-width:640px;margin-bottom:1rem">Changes saved.</div>
+    {% endif %}
+
+    {% if not profile %}
+    <div class="alert alert-error" style="max-width:640px">
+      Your account has not been synced to the roster yet. Contact an admin if this is unexpected.
+    </div>
+    {% else %}
+
+    <div style="max-width:640px;display:flex;flex-direction:column;gap:1rem">
+
+      <div class="card">
+        <h4 style="margin-top:0">Identity</h4>
+        <dl class="info-list">
+          <dt>Name</dt>
+          <dd>{{ profile.first_name }} {{ profile.last_name }}</dd>
+          <dt>Username</dt>
+          <dd><code>{{ user.username }}</code></dd>
+          <dt>Institutional email</dt>
+          <dd>{{ profile.email }}</dd>
+          <dt>Role</dt>
+          <dd>{{ profile.role or '—' }}</dd>
+          <dt>Account status</dt>
+          <dd>
+            {% if profile.disabled %}
+            <span style="color:var(--danger)">Disabled</span>
+            {% else %}
+            <span style="color:#166534">Active</span>
+            {% endif %}
+          </dd>
+          <dt>Expiry</dt>
+          <dd>{{ profile.expiry_date or 'No expiry' }}</dd>
+        </dl>
+      </div>
+
+      <div class="card">
+        <h4 style="margin-top:0">Integrations</h4>
+        <dl class="info-list">
+          <dt>GitHub</dt>
+          <dd>{{ profile.github_username or '—' }}</dd>
+          <dt>Slack</dt>
+          <dd>{{ profile.slack_username or '—' }}</dd>
+        </dl>
+        <p class="text-muted" style="font-size:.85rem;margin-bottom:0">
+          To update GitHub or Slack, contact your project lead or an admin.
+        </p>
+      </div>
+
+      {% if profile.ldap_groups and profile.ldap_groups.length %}
+      <div class="card">
+        <h4 style="margin-top:0">Groups</h4>
+        <div style="display:flex;flex-wrap:wrap;gap:.35rem">
+          {% for g in profile.ldap_groups %}
+          <span class="tag">{{ g }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="card">
+        <h4 style="margin-top:0">Contact Info <span class="text-muted" style="font-size:.85rem;font-weight:normal">(editable)</span></h4>
+        <form method="POST" action="/account">
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Long-term email <span class="text-muted" style="font-size:.8rem">(personal, persists after graduation)</span></label>
+            <input type="email" name="secondaryEmail" class="form-input"
+                   value="{{ profile.secondary_email or '' }}"
+                   placeholder="personal@gmail.com" autocomplete="off">
+          </div>
+          <div style="margin-bottom:1.25rem">
+            <label class="form-label">Phone number</label>
+            <input type="tel" name="phone" class="form-input"
+                   value="{{ profile.phone or '' }}"
+                   placeholder="+1 555 000 0000" autocomplete="off">
+          </div>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+      </div>
+
+    </div>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}

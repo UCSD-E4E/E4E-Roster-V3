@@ -33,9 +33,21 @@
         </div>
 
         <div class="form-group">
-          <label for="email">Email</label>
+          <label for="email">Institutional email</label>
           <input type="email" id="email" name="email" required autocomplete="off">
           <span class="form-hint">Used to generate the username.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="secondaryEmail">Long-term email <span class="text-muted">(optional — personal, persists after graduation)</span></label>
+          <input type="email" id="secondaryEmail" name="secondaryEmail" autocomplete="off"
+                 placeholder="personal@gmail.com">
+        </div>
+
+        <div class="form-group">
+          <label for="phone">Phone number <span class="text-muted">(optional)</span></label>
+          <input type="tel" id="phone" name="phone" autocomplete="off"
+                 placeholder="+1 555 000 0000">
         </div>
 
         <div class="form-group">
@@ -45,9 +57,10 @@
         </div>
 
         <div class="form-group">
-          <label for="expiryDate">Account expiry</label>
-          <input type="date" id="expiryDate" name="expiryDate" required>
-          <span class="form-hint">The user will not be able to log in after this date.</span>
+          <label>Account expiry</label>
+          <input type="hidden" name="expiryDate" id="expiryDate">
+          <div class="username-preview" id="expiryPreview" style="font-size:.9rem"></div>
+          <span class="form-hint">Fixed at 90 days from today. An admin can adjust this later.</span>
         </div>
 
         <div class="form-group">
@@ -100,7 +113,9 @@
   });
 
   const expiry = new Date();
-  expiry.setMonth(expiry.getMonth() + 3);
-  document.getElementById('expiryDate').value = expiry.toISOString().slice(0, 10);
+  expiry.setDate(expiry.getDate() + 90);
+  const expiryStr = expiry.toISOString().slice(0, 10);
+  document.getElementById('expiryDate').value = expiryStr;
+  document.getElementById('expiryPreview').textContent = expiryStr;
 </script>
 {% endblock %}
