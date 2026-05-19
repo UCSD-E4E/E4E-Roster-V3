@@ -1,26 +1,24 @@
 {% extends "layout.njk" %}
+{% from "_macros.njk" import wizard_header %}
 {% block title %}New User — SSO Account{% endblock %}
 {% block body %}
 <div class="app-layout">
   {% include "admin/_header.njk" %}
   <main class="app-main">
 
-    <div class="wizard-header">
-      <h2>Add New User</h2>
-      <ol class="wizard-steps">
-        <li class="active">1. SSO Account</li>
-        <li>2. GitHub &amp; Slack</li>
-        <li>3. Server Access</li>
-      </ol>
-    </div>
+    {{ wizard_header('Add New User', [
+      {label: '1. SSO Account', state: 'active'},
+      {label: '2. GitHub & Slack', state: ''},
+      {label: '3. Server Access', state: ''}
+    ]) }}
 
-    <div class="card" style="max-width:640px">
+    <div class="card card-narrow">
       <h3>Create SSO Account</h3>
       <p class="text-muted" style="margin-bottom:1.5rem">
         Creates the user in Univention LDAP. Authentik will sync the account automatically.
       </p>
 
-      <form method="POST" action="/admin/users/new/sso">
+      <form method="POST" action="{{ orgBase }}/admin/users/new/sso">
 
         <div class="form-row">
           <div class="form-group">
@@ -91,7 +89,7 @@
 
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Create SSO Account →</button>
-          <a href="/admin/users" class="btn btn-ghost">Cancel</a>
+          <a href="{{ orgBase }}/admin/users" class="btn btn-ghost">Cancel</a>
         </div>
 
       </form>

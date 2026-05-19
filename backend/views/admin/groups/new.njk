@@ -15,7 +15,7 @@
 
     <div class="card" style="max-width:640px">
 
-      <form method="POST" action="/admin/groups">
+      <form method="POST" action="{{ orgBase }}/admin/groups">
 
         <div class="form-group">
           <label for="groupName">Group name <span class="text-muted">(required)</span></label>
@@ -67,7 +67,7 @@
 
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Create Group</button>
-          <a href="/admin/integrations" class="btn btn-ghost">Cancel</a>
+          <a href="{{ orgBase }}/admin/integrations" class="btn btn-ghost">Cancel</a>
         </div>
 
       </form>

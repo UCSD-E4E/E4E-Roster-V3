@@ -18,5 +18,7 @@ COPY --from=builder /app/dist ./dist
 COPY backend/views ./views
 # Static assets served from /app/public; STATIC_DIR env var points here
 COPY frontend/static ./public
+RUN useradd -u 1001 -m appuser && chown -R appuser /app
+USER appuser
 EXPOSE 3000
 CMD ["node", "dist/server.js"]

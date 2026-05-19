@@ -1,4 +1,5 @@
 {% extends "layout.njk" %}
+{% from "_macros.njk" import back_link, status_badge %}
 {% block title %}{{ project.name }} Members{% endblock %}
 {% block body %}
 <div class="app-layout">
@@ -7,10 +8,10 @@
 
     <div class="page-header">
       <div>
-        <a href="/pl/projects" style="font-size:.85rem;color:var(--text-muted)">&larr; My Projects</a>
+        {{ back_link(orgBase + '/pl/projects', 'My Projects') }}
         <h2 style="margin:.25rem 0 0">{{ project.name }}</h2>
       </div>
-      <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-primary">+ Add Member</a>
+      <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/new" class="btn btn-primary">+ Add Member</a>
     </div>
 
     {% if warning %}
@@ -42,12 +43,11 @@
             <td>{{ u.github_username or '—' }}</td>
             <td>{{ u.slack_username or '—' }}</td>
             <td>
-              {% if u.disabled %}<span style="color:var(--danger)">Disabled</span>
-              {% else %}<span style="color:var(--success)">Active</span>{% endif %}
+              {{ status_badge(u.disabled) }}
             </td>
             <td style="display:flex;gap:.25rem">
-              <a href="/pl/projects/{{ project.id }}/users/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit</a>
-              <a href="/pl/projects/{{ project.id }}/users/{{ u.username }}/audit" class="btn btn-ghost btn-sm">Log</a>
+              <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit</a>
+              <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/{{ u.username }}/audit" class="btn btn-ghost btn-sm">Log</a>
             </td>
           </tr>
           {% endfor %}

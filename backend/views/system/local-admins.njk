@@ -1,0 +1,87 @@
+{% extends "layout.njk" %}
+{% from "_macros.njk" import status_badge %}
+{% block title %}Local Admins — System{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "system/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <h2>Local Admins</h2>
+        <p class="text-muted" style="margin:0;font-size:.9rem">
+          Break-glass accounts for initial setup. Delete once SSO is working.
+        </p>
+      </div>
+    </div>
+
+    <div class="layout-split">
+
+      {# Left: existing local admins #}
+      <div>
+        {% if admins.length %}
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Status</th>
+                <th>Last Used</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in admins %}
+              <tr class="{{ 'row-disabled' if not a.enabled }}">
+                <td><code>{{ a.username }}</code></td>
+                <td>
+                  {{ status_badge(not a.enabled) }}
+                </td>
+                <td style="font-size:.85rem;color:var(--text-muted)">{{ a.last_used_at or 'Never' }}</td>
+                <td style="display:flex;gap:.25rem">
+                  <form method="POST" action="/system/local-admins/{{ a.id }}/toggle" style="margin:0">
+                    <button class="btn btn-ghost btn-sm">
+                      {{ 'Disable' if a.enabled else 'Enable' }}
+                    </button>
+                  </form>
+                  <form method="POST" action="/system/local-admins/{{ a.id }}/delete" style="margin:0"
+                        onsubmit="return confirm('Delete local admin {{ a.username }}?')">
+                    <button class="btn btn-ghost btn-sm" style="color:var(--danger)">Delete</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted">No local admins. Good — SSO is handling all access.</p>
+        {% endif %}
+      </div>
+
+      {# Right: create form #}
+      <div class="card">
+        <h4>Create Local Admin</h4>
+
+        {% if error %}
+        <div class="alert alert-error" style="margin-bottom:1rem">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="/system/local-admins">
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Username</label>
+            <input type="text" name="username" class="form-input" required autocomplete="off">
+          </div>
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Password</label>
+            <input type="password" name="password" class="form-input" required autocomplete="new-password">
+          </div>
+          <button class="btn btn-primary" type="submit">Create</button>
+        </form>
+      </div>
+
+    </div>
+
+  </main>
+</div>
+{% endblock %}

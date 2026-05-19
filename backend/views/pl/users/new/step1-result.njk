@@ -1,19 +1,17 @@
 {% extends "layout.njk" %}
+{% from "_macros.njk" import wizard_header %}
 {% block title %}SSO Account — Result — {{ project.name }}{% endblock %}
 {% block body %}
 <div class="app-layout">
   {% include "pl/_header.njk" %}
   <main class="app-main">
 
-    <div class="wizard-header">
-      <h2>Add Member to {{ project.name }}</h2>
-      <ol class="wizard-steps">
-        <li class="done">1. SSO Account</li>
-        <li class="active">2. GitHub &amp; Slack</li>
-      </ol>
-    </div>
+    {{ wizard_header('Add Member to ' + project.name, [
+      {label: '1. SSO Account', state: 'done'},
+      {label: '2. GitHub & Slack', state: 'active'}
+    ]) }}
 
-    <div class="card" style="max-width:640px">
+    <div class="card card-narrow">
       <h3>SSO Account — {{ result.status | upper }}</h3>
 
       <div class="alert alert-{{ 'success' if result.status == 'success' else ('warn' if result.status == 'already_exists' else 'error') }}">
@@ -40,9 +38,9 @@
         {% if result.status != 'failed' %}
         <a href="{{ nextUrl }}" class="btn btn-primary">Continue to GitHub &amp; Slack →</a>
         {% else %}
-        <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-secondary">← Retry</a>
+        <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/new" class="btn btn-secondary">← Retry</a>
         {% endif %}
-        <a href="/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Back to Members</a>
+        <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Back to Members</a>
       </div>
     </div>
 

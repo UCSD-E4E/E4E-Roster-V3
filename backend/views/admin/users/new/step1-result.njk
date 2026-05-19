@@ -1,20 +1,18 @@
 {% extends "layout.njk" %}
+{% from "_macros.njk" import wizard_header %}
 {% block title %}SSO Account — Result{% endblock %}
 {% block body %}
 <div class="app-layout">
   {% include "admin/_header.njk" %}
   <main class="app-main">
 
-    <div class="wizard-header">
-      <h2>Add New User</h2>
-      <ol class="wizard-steps">
-        <li class="done">1. SSO Account</li>
-        <li class="active">2. GitHub &amp; Slack</li>
-        <li>3. Server Access</li>
-      </ol>
-    </div>
+    {{ wizard_header('Add New User', [
+      {label: '1. SSO Account', state: 'done'},
+      {label: '2. GitHub & Slack', state: 'active'},
+      {label: '3. Server Access', state: ''}
+    ]) }}
 
-    <div class="card" style="max-width:640px">
+    <div class="card card-narrow">
       <h3>SSO Account — {{ result.status | upper }}</h3>
 
       <div class="alert alert-{{ 'success' if result.status == 'success' else ('warn' if result.status == 'already_exists' else 'error') }}">
@@ -42,9 +40,9 @@
         {% if result.status != 'failed' %}
         <a href="{{ nextUrl }}" class="btn btn-primary">Continue to GitHub &amp; Slack →</a>
         {% else %}
-        <a href="/admin/users/new" class="btn btn-secondary">← Retry</a>
+        <a href="{{ orgBase }}/admin/users/new" class="btn btn-secondary">← Retry</a>
         {% endif %}
-        <a href="/admin/users" class="btn btn-ghost">Back to Users</a>
+        <a href="{{ orgBase }}/admin/users" class="btn btn-ghost">Back to Users</a>
       </div>
     </div>
 

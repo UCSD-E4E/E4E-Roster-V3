@@ -1,20 +1,21 @@
 import { Router, Request, Response } from 'express';
 import { requireProjectLead } from '../../middleware/requireProjectLead';
 import { db } from '../../services/db';
+import { isAnyOrgAdmin } from '../../types/user';
 import usersRouter from './users';
 
 const router = Router();
 router.use(requireProjectLead);
 
-router.get('/', (_req, res) => res.redirect('/pl/projects'));
+router.get('/', (_req, res: Response) => res.redirect(res.locals.orgBase + '/pl/projects'));
 
-// Project list — derived from the logged-in PL's LDAP group memberships
 router.get('/projects', async (req: Request, res: Response) => {
   const userGroups: string[] = req.user?.groups ?? [];
+  const isAdmin = req.user && (req.user.isSystemAdmin || isAnyOrgAdmin(req.user));
 
-  // Admin sees all projects; PL sees only projects they belong to (by LDAP group overlap)
   let projects: { id: number; name: string; description: string | null; member_count: string }[];
-  if (req.user?.isAdmin) {
+
+  if (isAdmin) {
     ({ rows: projects } = await db.query(
       `SELECT p.id, p.name, p.description,
               COUNT(DISTINCT u.id)::text AS member_count

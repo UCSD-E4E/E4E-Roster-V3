@@ -1,9 +1,17 @@
 <header class="app-header">
   <div class="app-header-inner">
-    <span class="app-brand">E4E Roster <span class="badge-admin" style="background:var(--primary)">Project Lead</span></span>
+    <span class="app-brand">
+      {{ currentOrg.name if currentOrg else 'Roster' }}
+      <span class="badge-admin" style="background:var(--primary)">Project Lead</span>
+    </span>
+    {% if user and user.orgs and user.orgs.length > 1 %}
+    <span class="org-switcher">
+      <a href="/orgs" class="org-switcher-link">Switch org</a>
+    </span>
+    {% endif %}
     <nav class="app-nav">
-      <a href="/pl/projects">My Projects</a>
-      <a href="/dashboard">My Dashboard</a>
+      <a href="{{ orgBase }}/pl/projects">My Projects</a>
+      <a href="{{ orgBase }}/dashboard">Dashboard</a>
       <form method="POST" action="/logout" style="display:inline">
         <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
       </form>

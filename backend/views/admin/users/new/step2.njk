@@ -1,20 +1,18 @@
 {% extends "layout.njk" %}
+{% from "_macros.njk" import wizard_header %}
 {% block title %}New User — GitHub &amp; Slack{% endblock %}
 {% block body %}
 <div class="app-layout">
   {% include "admin/_header.njk" %}
   <main class="app-main">
 
-    <div class="wizard-header">
-      <h2>Add New User — {{ wizard.user.username }}</h2>
-      <ol class="wizard-steps">
-        <li class="done">1. SSO Account</li>
-        <li class="active">2. GitHub &amp; Slack</li>
-        <li>3. Server Access</li>
-      </ol>
-    </div>
+    {{ wizard_header('Add New User — ' + wizard.user.username, [
+      {label: '1. SSO Account', state: 'done'},
+      {label: '2. GitHub & Slack', state: 'active'},
+      {label: '3. Server Access', state: ''}
+    ]) }}
 
-    <div class="card" style="max-width:640px">
+    <div class="card card-narrow">
       <h3>GitHub &amp; Slack</h3>
       <p class="text-muted" style="margin-bottom:1.5rem">
         Record the user's GitHub and Slack handles. Org invites can be sent later.
@@ -24,7 +22,7 @@
       <div class="alert alert-error">{{ error }}</div>
       {% endif %}
 
-      <form method="POST" action="/admin/users/new/github-slack">
+      <form method="POST" action="{{ orgBase }}/admin/users/new/github-slack">
 
         <div class="form-group">
           <label for="githubUsername">GitHub username</label>
@@ -41,8 +39,8 @@
 
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Save &amp; Continue →</button>
-          <a href="/admin/users/new/server" class="btn btn-secondary">Skip</a>
-          <a href="/admin/users" class="btn btn-ghost">Done for now</a>
+          <a href="{{ orgBase }}/admin/users/new/server" class="btn btn-secondary">Skip</a>
+          <a href="{{ orgBase }}/admin/users" class="btn btn-ghost">Done for now</a>
         </div>
 
       </form>

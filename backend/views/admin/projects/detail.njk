@@ -1,4 +1,5 @@
 {% extends "layout.njk" %}
+{% from "_macros.njk" import back_link %}
 {% block title %}{{ project.name }} — Projects — Admin{% endblock %}
 {% block body %}
 <div class="app-layout">
@@ -7,30 +8,30 @@
 
     <div class="page-header">
       <div>
-        <a href="/admin/projects" style="font-size:.85rem;color:var(--text-muted)">&larr; All Projects</a>
+        {{ back_link(orgBase + '/admin/projects', 'All Projects') }}
         <h2 style="margin:.25rem 0 0">{{ project.name }}</h2>
         {% if project.description %}<p class="text-muted" style="margin:0;font-size:.9rem">{{ project.description }}</p>{% endif %}
       </div>
       <div style="display:flex;gap:.5rem">
         <button onclick="document.getElementById('editModal').style.display='flex'" class="btn btn-secondary btn-sm">Edit</button>
-        <form method="POST" action="/admin/projects/{{ project.id }}/delete"
+        <form method="POST" action="{{ orgBase }}/admin/projects/{{ project.id }}/delete"
               onsubmit="return confirm('Delete project {{ project.name }}? This cannot be undone.')">
           <button class="btn btn-ghost btn-sm" style="color:var(--danger)">Delete Project</button>
         </form>
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:1.5rem;align-items:start">
+    <div class="layout-split">
 
       {# Left: current LDAP groups #}
       <div class="card">
-        <h4 style="margin-top:0">LDAP Groups in this Project</h4>
+        <h4>LDAP Groups in this Project</h4>
         {% if mapped.length %}
         <ul style="list-style:none;padding:0;margin:0 0 1rem">
           {% for g in mapped %}
           <li style="display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border)">
             <code>{{ g }}</code>
-            <form method="POST" action="/admin/projects/{{ project.id }}/groups/remove" style="margin:0">
+            <form method="POST" action="{{ orgBase }}/admin/projects/{{ project.id }}/groups/remove" style="margin:0">
               <input type="hidden" name="ldapGroup" value="{{ g }}">
               <button class="btn btn-ghost btn-sm" style="color:var(--danger)">Remove</button>
             </form>
@@ -44,8 +45,8 @@
 
       {# Right: add group #}
       <div class="card">
-        <h4 style="margin-top:0">Add LDAP Group</h4>
-        <form method="POST" action="/admin/projects/{{ project.id }}/groups"
+        <h4>Add LDAP Group</h4>
+        <form method="POST" action="{{ orgBase }}/admin/projects/{{ project.id }}/groups"
               style="display:flex;gap:.5rem;align-items:center">
           <select name="ldapGroup" class="form-input" style="flex:1">
             {% for g in allGroups %}
@@ -69,8 +70,8 @@
 {# Edit modal #}
 <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center">
   <div class="card" style="width:400px;max-width:90vw">
-    <h4 style="margin-top:0">Edit Project</h4>
-    <form method="POST" action="/admin/projects/{{ project.id }}/edit">
+    <h4>Edit Project</h4>
+    <form method="POST" action="{{ orgBase }}/admin/projects/{{ project.id }}/edit">
       <div style="margin-bottom:1rem">
         <label class="form-label">Name</label>
         <input type="text" name="name" class="form-input" value="{{ project.name }}" required>

@@ -1,0 +1,122 @@
+{% extends "layout.njk" %}
+{% from "_macros.njk" import status_badge %}
+{% block title %}Settings — {{ currentOrg.name }}{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <h2>Org Settings</h2>
+        <p class="text-muted" style="margin:0;font-size:.9rem">
+          Integration credentials for <strong>{{ currentOrg.name }}</strong>. Secrets are encrypted at rest.
+        </p>
+      </div>
+    </div>
+
+    {% if saved %}
+    <div class="alert alert-success" style="margin-bottom:1rem">
+      {{ 'GitHub' if saved == 'github' else 'Slack' }} settings saved.
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="alert alert-error" style="margin-bottom:1rem">{{ error }}</div>
+    {% endif %}
+
+    <div class="layout-split" style="max-width:960px;margin-top:1.5rem">
+
+      {# ── GitHub App ── #}
+      <div class="card">
+        <h4 style="display:flex;align-items:center;justify-content:space-between">
+          GitHub App
+          {{ status_badge(not github.enabled) }}
+        </h4>
+
+        <form method="POST" action="{{ orgBase }}/admin/settings/github">
+          <div style="margin-bottom:1rem">
+            <label class="form-label">App ID</label>
+            <input type="text" name="appId" class="form-input"
+                   value="{{ github.appId }}" placeholder="123456" autocomplete="off">
+          </div>
+
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Installation ID</label>
+            <input type="text" name="installationId" class="form-input"
+                   value="{{ github.installationId }}" placeholder="12345678" autocomplete="off">
+          </div>
+
+          <div style="margin-bottom:1rem">
+            <label class="form-label">GitHub Org</label>
+            <input type="text" name="org" class="form-input"
+                   value="{{ github.org }}" placeholder="UCSD-E4E" autocomplete="off">
+          </div>
+
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Private Key (PEM)</label>
+            <textarea name="privateKey" class="form-input" rows="4"
+                      placeholder="{{ '(currently set — leave blank to keep)' if github.hasPrivateKey else 'Paste PEM key here' }}"
+                      autocomplete="off"></textarea>
+            {% if github.hasPrivateKey %}
+            <span class="form-hint" style="color:var(--success)">Private key is set.</span>
+            {% else %}
+            <span class="form-hint" style="color:var(--danger)">No private key configured.</span>
+            {% endif %}
+          </div>
+
+          <div style="margin-bottom:1.25rem">
+            <label class="form-label">Enable integration</label>
+            <select name="enabled" class="form-input">
+              <option value="true"  {{ 'selected' if github.enabled }}>Enabled</option>
+              <option value="false" {{ 'selected' if not github.enabled }}>Disabled</option>
+            </select>
+          </div>
+
+          <button class="btn btn-primary" type="submit">Save GitHub</button>
+        </form>
+      </div>
+
+      {# ── Slack ── #}
+      <div class="card">
+        <h4 style="display:flex;align-items:center;justify-content:space-between">
+          Slack
+          {{ status_badge(not slack.enabled) }}
+        </h4>
+
+        <form method="POST" action="{{ orgBase }}/admin/settings/slack">
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Bot Token</label>
+            <input type="password" name="botToken" class="form-input"
+                   placeholder="{{ '(currently set — leave blank to keep)' if slack.hasBotToken else 'xoxb-...' }}"
+                   autocomplete="new-password">
+            {% if slack.hasBotToken %}
+            <span class="form-hint" style="color:var(--success)">Bot token is set.</span>
+            {% else %}
+            <span class="form-hint" style="color:var(--danger)">No bot token configured.</span>
+            {% endif %}
+          </div>
+
+          <div style="margin-bottom:1.25rem">
+            <label class="form-label">Team ID</label>
+            <input type="text" name="teamId" class="form-input"
+                   value="{{ slack.teamId }}" placeholder="T01ABC123" autocomplete="off">
+            <span class="form-hint">Slack workspace/team ID, found in workspace settings.</span>
+          </div>
+
+          <div style="margin-bottom:1.25rem">
+            <label class="form-label">Enable integration</label>
+            <select name="enabled" class="form-input">
+              <option value="true"  {{ 'selected' if slack.enabled }}>Enabled</option>
+              <option value="false" {{ 'selected' if not slack.enabled }}>Disabled</option>
+            </select>
+          </div>
+
+          <button class="btn btn-primary" type="submit">Save Slack</button>
+        </form>
+      </div>
+
+    </div>
+
+  </main>
+</div>
+{% endblock %}
