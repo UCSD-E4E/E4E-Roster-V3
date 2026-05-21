@@ -9,6 +9,7 @@ import dashboardRouter from './routes/dashboard';
 import accountRouter from './routes/account';
 import adminRouter from './routes/admin/index';
 import plRouter from './routes/pl/index';
+import debugRouter from './routes/admin/debug'; // TEMPORARY — see /DEBUG_CHANGES.md
 
 export function createApp(): express.Application {
   const app = express();
@@ -52,6 +53,7 @@ export function createApp(): express.Application {
   app.use('/dashboard', dashboardRouter);
   app.use('/account', accountRouter);
   app.use('/admin', adminRouter);
+  app.use('/debug', debugRouter); // TEMPORARY — see /DEBUG_CHANGES.md
   app.use('/pl', plRouter);
 
   return app;

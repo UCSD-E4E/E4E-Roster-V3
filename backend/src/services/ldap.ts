@@ -16,8 +16,8 @@ export function generateUsername(firstName: string, lastName: string, email: str
 function ldapClient(): Client {
   return new Client({
     url: process.env.LDAP_URL!,
-    // rejectUnauthorized is false to match the server's self-signed cert —
-    // the same configuration Authentik uses to connect to this server.
+    connectTimeout: 5000,
+    // Self-signed cert — matches how Authentik connects to this server.
     tlsOptions: { rejectUnauthorized: false },
   });
 }
@@ -25,7 +25,9 @@ function ldapClient(): Client {
 async function withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
   const client = ldapClient();
   try {
+    const t0 = Date.now();
     await client.bind(process.env.LDAP_BIND_DN!, process.env.LDAP_BIND_PASSWORD!);
+    console.log(`[ldap] bind: ${Date.now() - t0}ms`);
     return await fn(client);
   } finally {
     await client.unbind();
@@ -36,26 +38,93 @@ function generateTempPassword(): string {
   return crypto.randomBytes(12).toString('base64url');
 }
 
-/** Convert ISO date (YYYY-MM-DD) to shadowExpire: days since Unix epoch */
-function toShadowExpire(isoDate: string): string {
-  const ms = new Date(isoDate).getTime();
-  return Math.floor(ms / 86400000).toString();
+// Samba4 AD uses Windows FILETIME: 100-ns ticks since 1601-01-01 UTC.
+// 0 and 9223372036854775807 both mean "never expires".
+function fileTimeToISO(filetime: string): string | null {
+  const val = BigInt(filetime);
+  if (val === 0n || val === 9223372036854775807n) return null;
+  const unixMs = Number((val - 116444736000000000n) / 10000n);
+  return new Date(unixMs).toISOString().split('T')[0];
+}
+
+// ISO date (YYYY-MM-DD) → Windows FILETIME string
+function isoToFileTime(isoDate: string): string {
+  const unixMs = new Date(isoDate).getTime();
+  const filetime = BigInt(unixMs) * 10000n + 116444736000000000n;
+  return filetime.toString();
 }
 
 function userDN(username: string): string {
-  return `uid=${username},${process.env.LDAP_USERS_DN}`;
+  return `CN=${username},${process.env.LDAP_USERS_DN}`;
 }
 
 function groupDN(groupCN: string): string {
-  return `cn=${groupCN},${process.env.LDAP_GROUPS_DN}`;
+  return `CN=${groupCN},${process.env.LDAP_GROUPS_DN}`;
+}
+
+// userAccountControl bit 0x2 = disabled; 512 = normal enabled account
+function isDisabled(uac: string | undefined): boolean {
+  return (parseInt(uac ?? '0', 10) & 0x2) !== 0;
+}
+
+export interface LdapUser {
+  dn: string;
+  username: string;          // sAMAccountName
+  firstName: string;         // givenName
+  lastName: string;          // sn
+  email: string;             // mail
+  disabled: boolean;         // userAccountControl & 0x2
+  groups: string[];          // memberOf CNs
+  expiryDate: string | null; // accountExpires → ISO date, null = never
+  sshPublicKeys: string[];   // sshPublicKey (OpenSSH-LPK schema extension)
+}
+
+export async function listUsers(): Promise<LdapUser[]> {
+  return withClient(async (client) => {
+    const t1 = Date.now();
+    const { searchEntries } = await client.search(process.env.LDAP_USERS_DN!, {
+      scope: 'sub',
+      filter: '(&(objectClass=user)(!(objectClass=computer)))',
+      attributes: [
+        'sAMAccountName', 'givenName', 'sn', 'mail',
+        'userAccountControl', 'memberOf', 'accountExpires', 'sshPublicKey',
+      ],
+    });
+    console.log(`[ldap] search: ${Date.now() - t1}ms, ${searchEntries.length} users`);
+
+    return searchEntries.map((e) => {
+      const rawGroups = e.memberOf ?? [];
+      const groups = (Array.isArray(rawGroups) ? rawGroups : [rawGroups])
+        .filter(Boolean)
+        .map((dn) => {
+          const m = (dn as string).match(/^CN=([^,]+)/i);
+          return m ? m[1] : (dn as string);
+        });
+
+      const str = (v: unknown) => (typeof v === 'string' ? v : '');
+      return {
+        dn: e.dn,
+        username: str(e.sAMAccountName),
+        firstName: str(e.givenName),
+        lastName: str(e.sn),
+        email: str(e.mail),
+        disabled: isDisabled(e.userAccountControl as string),
+        groups,
+        expiryDate: e.accountExpires ? fileTimeToISO(e.accountExpires as string) : null,
+        sshPublicKeys: e.sshPublicKey
+          ? (Array.isArray(e.sshPublicKey) ? e.sshPublicKey : [e.sshPublicKey]) as string[]
+          : [],
+      };
+    });
+  });
 }
 
 export async function checkUser(username: string): Promise<SystemStatus> {
   return withClient(async (client) => {
     const { searchEntries } = await client.search(process.env.LDAP_USERS_DN!, {
       scope: 'sub',
-      filter: `(uid=${username})`,
-      attributes: ['uid', 'mail', 'cn'],
+      filter: `(sAMAccountName=${username})`,
+      attributes: ['sAMAccountName', 'mail', 'cn'],
     });
     const entry = searchEntries[0];
     return {
@@ -63,6 +132,40 @@ export async function checkUser(username: string): Promise<SystemStatus> {
       details: entry ? { dn: entry.dn, mail: entry.mail } : undefined,
     };
   });
+}
+
+export async function listGroups(): Promise<string[]> {
+  return withClient(async (client) => {
+    const { searchEntries } = await client.search(process.env.LDAP_GROUPS_DN!, {
+      scope: 'sub',
+      // Exclude built-in/critical system groups
+      filter: '(&(objectClass=group)(!(isCriticalSystemObject=TRUE)))',
+      attributes: ['cn'],
+    });
+    console.log(`[ldap] found ${searchEntries.length} groups`);
+    return searchEntries.map((e) => e.cn as string).filter(Boolean).sort();
+  });
+}
+
+export async function createGroup(name: string): Promise<ProvisionResult> {
+  const existing = await listGroups();
+  if (existing.includes(name)) {
+    return { status: 'already_exists', message: `Group "${name}" already exists` };
+  }
+
+  try {
+    await withClient(async (client) => {
+      await client.add(groupDN(name), {
+        objectClass: ['top', 'group'],
+        cn: name,
+        sAMAccountName: name,
+        groupType: '-2147483646', // Global security group
+      });
+    });
+    return { status: 'success', message: `Created group "${name}"` };
+  } catch (err: unknown) {
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 export async function createUser(
@@ -74,18 +177,24 @@ export async function createUser(
   }
 
   const tempPassword = generateTempPassword();
+  // Samba4 requires the password wrapped in double-quotes, encoded as UTF-16LE
+  const encodedPassword = Buffer.from(`"${tempPassword}"`, 'utf16le');
 
   try {
     await withClient(async (client) => {
+      // No POSIX attrs (uidNumber/gidNumber/shell) — SSSD derives these from the AD SID
       await client.add(userDN(user.username), {
-        objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
+        objectClass: ['top', 'person', 'organizationalPerson', 'user'],
         cn: `${user.firstName} ${user.lastName}`,
         sn: user.lastName,
         givenName: user.firstName,
-        uid: user.username,
+        sAMAccountName: user.username,
+        userPrincipalName: `${user.username}@${process.env.LDAP_DOMAIN!}`,
         mail: user.email,
-        userPassword: tempPassword,
-        shadowExpire: toShadowExpire(user.expiryDate),
+        // ldapts types don't expose Buffer, but ldapjs underneath handles it correctly
+        unicodePwd: encodedPassword as unknown as string,
+        userAccountControl: '512', // Normal enabled account
+        accountExpires: isoToFileTime(user.expiryDate),
       });
 
       for (const group of user.ldapGroups) {
@@ -93,7 +202,7 @@ export async function createUser(
           await client.modify(groupDN(group), [
             new Change({
               operation: 'add',
-              modification: new Attribute({ type: 'uniqueMember', values: [userDN(user.username)] }),
+              modification: new Attribute({ type: 'member', values: [userDN(user.username)] }),
             }),
           ]);
         } catch (err: unknown) {
@@ -109,19 +218,264 @@ export async function createUser(
       details: { groups: user.ldapGroups },
     };
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { status: 'failed', message };
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
   }
 }
 
-export async function listGroups(): Promise<string[]> {
-  return withClient(async (client) => {
-    const { searchEntries } = await client.search(process.env.LDAP_GROUPS_DN!, {
-      scope: 'sub',
-      filter: '(&(objectClass=group)(!(isCriticalSystemObject=TRUE)))',
-      attributes: ['cn'],
+export async function updateUserExpiry(
+  username: string,
+  expiryDate: string | null,
+): Promise<ProvisionResult> {
+  const check = await checkUser(username);
+  if (!check.exists || !check.details) {
+    return { status: 'failed', message: `User ${username} not found` };
+  }
+
+  const dn = check.details['dn'] as string;
+  // 0 = never expires in Samba4 AD
+  const value = expiryDate ? isoToFileTime(expiryDate) : '0';
+
+  try {
+    await withClient(async (client) => {
+      await client.modify(dn, [
+        new Change({
+          operation: 'replace',
+          modification: new Attribute({ type: 'accountExpires', values: [value] }),
+        }),
+      ]);
     });
-    console.log(`[ldap] found ${searchEntries.length} groups`);
-    return searchEntries.map((e) => e.cn as string).filter(Boolean).sort();
-  });
+    return { status: 'success', message: `Updated expiry for ${username}` };
+  } catch (err: unknown) {
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
+  }
 }
+
+export async function updateUserGroups(
+  username: string,
+  groupNames: string[],
+): Promise<ProvisionResult> {
+  const check = await checkUser(username);
+  if (!check.exists || !check.details) {
+    return { status: 'failed', message: `User ${username} not found` };
+  }
+
+  const userDn = check.details['dn'] as string;
+
+  try {
+    // Get current group memberships
+    const currentUser = (await listUsers()).find((u) => u.username === username);
+    const currentGroups = currentUser?.groups ?? [];
+
+    const toAdd = groupNames.filter((g) => !currentGroups.includes(g));
+    const toRemove = currentGroups.filter((g) => !groupNames.includes(g));
+
+    await withClient(async (client) => {
+      for (const group of toAdd) {
+        await client.modify(groupDN(group), [
+          new Change({
+            operation: 'add',
+            modification: new Attribute({ type: 'member', values: [userDn] }),
+          }),
+        ]);
+      }
+      for (const group of toRemove) {
+        await client.modify(groupDN(group), [
+          new Change({
+            operation: 'delete',
+            modification: new Attribute({ type: 'member', values: [userDn] }),
+          }),
+        ]);
+      }
+    });
+
+    return { status: 'success', message: `Updated groups for ${username}` };
+  } catch (err: unknown) {
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+function validateEd25519Key(key: string): string | null {
+  return key.trimStart().startsWith('ssh-ed25519 ')
+    ? null
+    : 'Only ed25519 keys are accepted (key must start with "ssh-ed25519 ")';
+}
+
+/**
+ * Add a single SSH public key to a user.
+ * Attaches the ldapPublicKey aux class first (idempotent — ignored if already present),
+ * then appends the key. ed25519 only per KRG policy.
+ */
+export async function addSshKey(username: string, publicKey: string): Promise<ProvisionResult> {
+  const keyError = validateEd25519Key(publicKey);
+  if (keyError) return { status: 'failed', message: keyError };
+  const check = await checkUser(username);
+  if (!check.exists || !check.details) {
+    return { status: 'failed', message: `User ${username} not found` };
+  }
+
+  const dn = check.details['dn'] as string;
+
+  try {
+    await withClient(async (client) => {
+      // Step 1: attach the aux class — ignore "already exists" error
+      try {
+        await client.modify(dn, [
+          new Change({
+            operation: 'add',
+            modification: new Attribute({ type: 'objectClass', values: ['ldapPublicKey'] }),
+          }),
+        ]);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.toLowerCase().includes('already exists') && !msg.includes('20')) throw err;
+      }
+
+      // Step 2: append the key
+      await client.modify(dn, [
+        new Change({
+          operation: 'add',
+          modification: new Attribute({ type: 'sshPublicKey', values: [publicKey] }),
+        }),
+      ]);
+    });
+    return { status: 'success', message: `Added SSH key for ${username}` };
+  } catch (err: unknown) {
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Replace all SSH keys on a user with the provided list.
+ * Pass an empty array to remove all keys.
+ */
+export async function setSshKeys(username: string, publicKeys: string[]): Promise<ProvisionResult> {
+  for (const key of publicKeys) {
+    const keyError = validateEd25519Key(key);
+    if (keyError) return { status: 'failed', message: `Invalid key "${key.slice(0, 30)}...": ${keyError}` };
+  }
+  const check = await checkUser(username);
+  if (!check.exists || !check.details) {
+    return { status: 'failed', message: `User ${username} not found` };
+  }
+
+  const dn = check.details['dn'] as string;
+
+  try {
+    await withClient(async (client) => {
+      // Ensure aux class is attached
+      try {
+        await client.modify(dn, [
+          new Change({
+            operation: 'add',
+            modification: new Attribute({ type: 'objectClass', values: ['ldapPublicKey'] }),
+          }),
+        ]);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.toLowerCase().includes('already exists') && !msg.includes('20')) throw err;
+      }
+
+      await client.modify(dn, [
+        new Change({
+          operation: 'replace',
+          modification: new Attribute({ type: 'sshPublicKey', values: publicKeys }),
+        }),
+      ]);
+    });
+    return { status: 'success', message: `Set ${publicKeys.length} SSH key(s) for ${username}` };
+  } catch (err: unknown) {
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function addUserToGroup(username: string, groupName: string): Promise<ProvisionResult> {
+  const check = await checkUser(username);
+  if (!check.exists || !check.details) {
+    return { status: 'failed', message: `User ${username} not found` };
+  }
+  const dn = check.details['dn'] as string;
+  try {
+    await withClient(async (client) => {
+      await client.modify(groupDN(groupName), [
+        new Change({
+          operation: 'add',
+          modification: new Attribute({ type: 'member', values: [dn] }),
+        }),
+      ]);
+    });
+    return { status: 'success', message: `Added ${username} to ${groupName}` };
+  } catch (err: unknown) {
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function removeUserFromGroup(username: string, groupName: string): Promise<ProvisionResult> {
+  const check = await checkUser(username);
+  if (!check.exists || !check.details) {
+    return { status: 'failed', message: `User ${username} not found` };
+  }
+  const dn = check.details['dn'] as string;
+  try {
+    await withClient(async (client) => {
+      await client.modify(groupDN(groupName), [
+        new Change({
+          operation: 'delete',
+          modification: new Attribute({ type: 'member', values: [dn] }),
+        }),
+      ]);
+    });
+    return { status: 'success', message: `Removed ${username} from ${groupName}` };
+  } catch (err: unknown) {
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// TODO: re-enable once extended attribute strategy is decided (Exchange schema vs custom attributes)
+/*
+export async function updateUserLdapFields(
+  username: string,
+  fields: {
+    slackId?: string | null;
+    githubUsername?: string | null;
+    role?: string | null;
+    secondaryEmail?: string | null;
+    phone?: string | null;
+  },
+): Promise<ProvisionResult> {
+  const check = await checkUser(username);
+  if (!check.exists || !check.details) {
+    return { status: 'failed', message: `User ${username} not found` };
+  }
+
+  const dn = check.details['dn'] as string;
+  const changes: Change[] = [];
+
+  const addChange = (attr: string, value: string | null) => {
+    changes.push(
+      new Change({
+        operation: 'replace',
+        modification: new Attribute({ type: attr, values: value ? [value] : [] }),
+      }),
+    );
+  };
+
+  if (fields.slackId !== undefined) addChange('extensionAttribute1', fields.slackId ?? null);
+  if (fields.githubUsername !== undefined) addChange('extensionAttribute2', fields.githubUsername ?? null);
+  if (fields.role !== undefined) addChange('extensionAttribute3', fields.role ?? null);
+  if (fields.secondaryEmail !== undefined) addChange('extensionAttribute4', fields.secondaryEmail ?? null);
+  if (fields.phone !== undefined) addChange('mobile', fields.phone ?? null);
+
+  if (changes.length === 0) {
+    return { status: 'success', message: 'No fields to update' };
+  }
+
+  try {
+    await withClient(async (client) => {
+      await client.modify(dn, changes);
+    });
+    return { status: 'success', message: `Updated LDAP fields for ${username}` };
+  } catch (err: unknown) {
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
+  }
+}
+*/

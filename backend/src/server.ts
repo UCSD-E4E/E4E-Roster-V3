@@ -4,7 +4,6 @@ import { setupPassport } from './auth';
 import { createApp } from './app';
 import { runMigrations } from './services/db';
 import { startSyncSchedule } from './services/sync';
-import { ensureExtendedAttributes } from './services/udm';
 
 async function bootstrap(): Promise<void> {
   const {
@@ -14,35 +13,38 @@ async function bootstrap(): Promise<void> {
     OIDC_REDIRECT_URI,
     SESSION_SECRET,
     PORT = '3000',
+    SKIP_OIDC,
   } = process.env;
 
-  if (!OIDC_ISSUER_URL || !OIDC_CLIENT_ID || !OIDC_CLIENT_SECRET || !OIDC_REDIRECT_URI) {
-    throw new Error(
-      'Missing required OIDC env vars: OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_REDIRECT_URI',
-    );
-  }
   if (!SESSION_SECRET) {
     throw new Error('SESSION_SECRET env var is required');
   }
 
-  console.log(`Discovering OIDC issuer at ${OIDC_ISSUER_URL}...`);
-  const issuer = await Issuer.discover(OIDC_ISSUER_URL);
-  console.log(`Issuer discovered: ${issuer.issuer}`);
+  // TEMPORARY: see DEBUG_CHANGES.md — skip OIDC discovery for local testing without Authentik
+  if (SKIP_OIDC === 'true') {
+    console.warn('[startup] SKIP_OIDC=true — OIDC auth disabled, localhost debug routes only');
+  } else {
+    if (!OIDC_ISSUER_URL || !OIDC_CLIENT_ID || !OIDC_CLIENT_SECRET || !OIDC_REDIRECT_URI) {
+      throw new Error(
+        'Missing required OIDC env vars: OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_REDIRECT_URI',
+      );
+    }
 
-  const client = new issuer.Client({
-    client_id: OIDC_CLIENT_ID,
-    client_secret: OIDC_CLIENT_SECRET,
-    redirect_uris: [OIDC_REDIRECT_URI],
-    response_types: ['code'],
-  });
+    console.log(`Discovering OIDC issuer at ${OIDC_ISSUER_URL}...`);
+    const issuer = await Issuer.discover(OIDC_ISSUER_URL);
+    console.log(`Issuer discovered: ${issuer.issuer}`);
 
-  setupPassport(client);
+    const client = new issuer.Client({
+      client_id: OIDC_CLIENT_ID,
+      client_secret: OIDC_CLIENT_SECRET,
+      redirect_uris: [OIDC_REDIRECT_URI],
+      response_types: ['code'],
+    });
+
+    setupPassport(client);
+  }
 
   await runMigrations();
-  // Ensure custom LDAP extended attributes exist before first sync
-  await ensureExtendedAttributes().catch((err) =>
-    console.warn('[startup] ensureExtendedAttributes failed (non-fatal):', err),
-  );
   startSyncSchedule();
 
   const app = createApp();
