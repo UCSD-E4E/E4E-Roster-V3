@@ -10,7 +10,8 @@
         <a href="/pl/projects" style="font-size:.85rem;color:var(--text-muted)">&larr; My Projects</a>
         <h2 style="margin:.25rem 0 0">{{ project.name }}</h2>
       </div>
-      <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-primary">+ Add Member</a>
+      <a href="/pl/projects/{{ project.id }}/users/add" class="btn btn-secondary">+ Add Existing</a>
+      <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-primary">+ New Member</a>
     </div>
 
     {% if warning %}
