@@ -1,6 +1,6 @@
 // TEMPORARY — see /DEBUG_CHANGES.md before merging to main
 import { Router } from 'express';
-import { listUsers, listGroups, createGroup, addSshKey, setSshKeys, addUserToGroup, removeUserFromGroup } from '../../services/ldap';
+import { listUsers, listGroups, createGroup, createUser, addSshKey, setSshKeys, addUserToGroup, removeUserFromGroup, generateUsername, updateUserGroups, updateUserExpiry } from '../../services/ldap';
 
 const router = Router();
 
@@ -43,6 +43,50 @@ router.post('/ldap/groups', async (req, res) => {
   res.status(result.status === 'failed' ? 500 : 200).json({ ok: result.status !== 'failed', ...result });
 });
 
+// Create a user
+// POST /debug/ldap/users
+// { "firstName": "Sean", "lastName": "Perry", "email": "shperry@ucsd.edu",
+//   "role": "student", "expiryDate": "2027-01-01",
+//   "ldapGroups": ["Domain Users"], "sshPublicKeys": ["ssh-ed25519 AAAA..."] }
+router.post('/ldap/users', async (req, res) => {
+  const { firstName, lastName, email, role, expiryDate, ldapGroups, sshPublicKeys } =
+    req.body as Record<string, string | string[]>;
+
+  if (!firstName || !lastName || !email || !role || !expiryDate) {
+    return res.status(400).json({ ok: false, error: 'firstName, lastName, email, role, expiryDate are required' });
+  }
+
+  const user = {
+    username: generateUsername(firstName as string, lastName as string, email as string),
+    firstName: firstName as string,
+    lastName: lastName as string,
+    email: email as string,
+    role: role as string,
+    expiryDate: expiryDate as string,
+    ldapGroups: [ldapGroups ?? []].flat(),
+    sshPublicKeys: [sshPublicKeys ?? []].flat(),
+    githubTeams: [],
+    serverGroups: [],
+  };
+
+  const ldapResult = await createUser(user);
+
+  const sshResults = [];
+  if (ldapResult.status !== 'failed') {
+    for (const key of user.sshPublicKeys) {
+      const r = await addSshKey(user.username, key);
+      sshResults.push({ key: key.slice(0, 40) + '…', ...r });
+    }
+  }
+
+  res.status(ldapResult.status === 'failed' ? 500 : 200).json({
+    ok: ldapResult.status !== 'failed',
+    username: user.username,
+    ldap: ldapResult,
+    sshKeys: sshResults,
+  });
+});
+
 // Add a user to a group
 // POST /debug/ldap/groups/:groupname/members  { "username": "s.perry.543" }
 router.post('/ldap/groups/:groupname/members', async (req, res) => {
@@ -61,6 +105,33 @@ router.delete('/ldap/groups/:groupname/members/:username', async (req, res) => {
 
   const result = await removeUserFromGroup(username, groupname);
   res.status(result.status === 'success' ? 200 : 500).json({ ok: result.status === 'success', ...result });
+});
+
+// Patch a user — any combination of: groups, expiryDate, sshKeys
+// PATCH /debug/ldap/users/:username
+// { "groups": ["Waiter"], "expiryDate": "2028-01-01", "sshKeys": ["ssh-ed25519 AAAA..."] }
+router.patch('/ldap/users/:username', async (req, res) => {
+  const { username } = req.params;
+  const { groups, expiryDate, sshKeys } = req.body as {
+    groups?: string[];
+    expiryDate?: string;
+    sshKeys?: string[];
+  };
+
+  const results: Record<string, unknown> = {};
+
+  if (groups !== undefined) {
+    results.groups = await updateUserGroups(username, groups);
+  }
+  if (expiryDate !== undefined) {
+    results.expiry = await updateUserExpiry(username, expiryDate || null);
+  }
+  if (sshKeys !== undefined) {
+    results.sshKeys = await setSshKeys(username, sshKeys);
+  }
+
+  const failed = Object.values(results).find((r: any) => r?.status === 'failed');
+  res.status(failed ? 500 : 200).json({ ok: !failed, username, ...results });
 });
 
 // Add an SSH key to a user
