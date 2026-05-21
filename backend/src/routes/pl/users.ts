@@ -5,7 +5,7 @@
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../../services/db';
-import * as udm from '../../services/udm';
+import * as ldap from '../../services/ldap';
 import { generateUsername } from '../../services/ldap';
 import { NewUser } from '../../services/types';
 
@@ -147,13 +147,9 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   const nonProjectGroups = rows[0].ldap_groups.filter((g) => !projGroups.includes(g));
   const mergedGroups = [...new Set([...nonProjectGroups, ...selectedProjectGroups])];
 
-  const groupResult = await udm.updateUserGroups(username, mergedGroups);
-  let udmError: string | null = null;
-  if (groupResult.status === 'failed') {
-    udmError = groupResult.message;
-  }
+  const groupResult = await ldap.updateUserGroups(username, mergedGroups);
 
-  if (udmError) {
+  if (groupResult.status === 'failed') {
     const { rows: userRows } = await db.query(
       `SELECT username, first_name, last_name, email, secondary_email, phone, role,
               TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
@@ -165,7 +161,7 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
       project: res.locals.project,
       user: userRows[0],
       projectGroups: projGroups,
-      error: udmError,
+      error: groupResult.message,
     });
   }
 
@@ -188,12 +184,7 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
     [mergedGroups, cleanGithub, cleanSlack, cleanSecondary, cleanPhone, isDisabled, username],
   );
 
-  udm.updateUserLdapFields(username, {
-    ...(cleanSlack  !== null && { slackId: cleanSlack }),
-    ...(cleanGithub !== null && { githubUsername: cleanGithub }),
-    secondaryEmail: cleanSecondary,
-    phone: cleanPhone,
-  }).catch((err) => console.warn(`[pl] LDAP write-back failed for ${username}:`, err));
+  // TODO: write slack/github/secondaryEmail/phone back to LDAP once extended attribute strategy is decided
 
   if (cleanGithub) triggerGithubInvite(cleanGithub);
 
@@ -235,11 +226,12 @@ router.post('/new/sso', async (req: Request, res: Response) => {
     role: 'student',
     expiryDate,
     ldapGroups: chosenGroups,
+    sshPublicKeys: [],
     githubTeams: [],
     serverGroups: [],
   };
 
-  const result = await udm.createUser(user);
+  const result = await ldap.createUser(user);
 
   if (result.status === 'success') {
     await db.query(
@@ -283,14 +275,7 @@ router.post('/new/github-slack', async (req: Request, res: Response) => {
     [cleanGithub, cleanSlack, username],
   );
 
-  if (cleanGithub || cleanSlack) {
-    const ldapFields: { slackId?: string | null; githubUsername?: string | null } = {};
-    if (cleanSlack) ldapFields.slackId = cleanSlack;
-    if (cleanGithub) ldapFields.githubUsername = cleanGithub;
-    udm.updateUserLdapFields(username, ldapFields).catch((err) =>
-      console.warn(`[pl-wizard] LDAP write-back failed for ${username}:`, err),
-    );
-  }
+  // TODO: write slack/github back to LDAP once extended attribute strategy is decided
 
   if (cleanGithub) triggerGithubInvite(cleanGithub);
 

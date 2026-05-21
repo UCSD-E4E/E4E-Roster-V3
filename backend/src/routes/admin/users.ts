@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAdmin } from '../../middleware/requireAdmin';
 import { generateUsername } from '../../services/ldap';
-import * as udm from '../../services/udm';
+import * as ldap from '../../services/ldap';
 import { db } from '../../services/db';
 import { syncUsers } from '../../services/sync';
 import { NewUser } from '../../services/types';
@@ -45,33 +45,35 @@ router.get('/:username/edit', async (req: Request, res: Response) => {
   );
   if (!rows.length) return res.status(404).send('User not found');
 
-  let allGroups: string[] = [];
-  try {
-    allGroups = await udm.listGroups();
-  } catch (err) {
-    console.error('[admin] Failed to fetch groups:', err);
-  }
+  const [allGroups, ldapUser] = await Promise.all([
+    ldap.listGroups().catch(() => []),
+    ldap.getUser(username).catch(() => null),
+  ]);
 
-  res.render('admin/users/edit-user', { user: rows[0], allGroups });
+  res.render('admin/users/edit-user', {
+    user: rows[0],
+    allGroups,
+    sshPublicKeys: ldapUser?.sshPublicKeys ?? [],
+  });
 });
 
 router.post('/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
-  const { role, expiryDate, githubUsername, slackUsername, secondaryEmail, phone } =
+  const { role, expiryDate, githubUsername, slackUsername, secondaryEmail, phone, sshKeys } =
     req.body as Record<string, string>;
   const selectedGroups: string[] = [req.body.groups ?? []].flat();
+  const sshPublicKeys = (sshKeys || '').split('\n').map((k: string) => k.trim()).filter(Boolean);
 
-  const groupResult = await udm.updateUserGroups(username, selectedGroups);
+  const [groupResult, expiryResult, sshResult] = await Promise.all([
+    ldap.updateUserGroups(username, selectedGroups),
+    ldap.updateUserExpiry(username, expiryDate || null),
+    ldap.setSshKeys(username, sshPublicKeys),
+  ]);
 
-  let udmError: string | null = null;
-  if (groupResult.status === 'failed') {
-    udmError = groupResult.message;
-  } else {
-    const expiryResult = await udm.updateUserExpiry(username, expiryDate ?? '');
-    if (expiryResult.status === 'failed') udmError = expiryResult.message;
-  }
+  const ldapError = [groupResult, expiryResult, sshResult]
+    .find(r => r.status === 'failed')?.message ?? null;
 
-  if (udmError) {
+  if (ldapError) {
     const { rows } = await db.query(
       `SELECT username, first_name, last_name, email, secondary_email, phone, role,
               TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
@@ -79,8 +81,13 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
        FROM users WHERE username = $1`,
       [username],
     );
-    const allGroups = await udm.listGroups().catch(() => []);
-    return res.render('admin/users/edit-user', { user: rows[0], allGroups, error: udmError });
+    const allGroups = await ldap.listGroups().catch(() => []);
+    return res.render('admin/users/edit-user', {
+      user: rows[0],
+      allGroups,
+      sshPublicKeys,
+      error: ldapError,
+    });
   }
 
   const cleanGithub = githubUsername?.trim() || null;
@@ -103,44 +110,32 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
      cleanSecondary, cleanPhone, username],
   );
 
-  const cleanRole = role || null;
-  udm.updateUserLdapFields(username, {
-    ...(cleanSlack    !== null && { slackId: cleanSlack }),
-    ...(cleanGithub   !== null && { githubUsername: cleanGithub }),
-    ...(cleanRole     !== null && { role: cleanRole }),
-    secondaryEmail: cleanSecondary,
-    phone: cleanPhone,
-  }).catch((err) => console.warn(`[admin] LDAP write-back failed for ${username}:`, err));
-
   if (cleanGithub) triggerGithubInvite(cleanGithub);
 
   res.redirect('/admin/users');
 });
 
-// ── New user wizard ───────────────────────────────────────────────
-
-router.get('/new', async (req: Request, res: Response) => {
-  delete req.session.wizard;
-
-  let groups: string[] = [];
-  try {
-    groups = await udm.listGroups();
-  } catch (err) {
-    console.error('[admin] Failed to fetch groups from UDM:', err);
-  }
-
-  res.render('admin/users/new/step1', { groups });
+// ── New user ──────────────────────────────────────────────────────
+router.get('/new', async (_req: Request, res: Response) => {
+  const groups = await ldap.listGroups().catch(() => []);
+  res.render('admin/users/new', { groups });
 });
 
-router.post('/new/sso', async (req: Request, res: Response) => {
-  const { firstName, lastName, email, secondaryEmail, phone, role, expiryDate, ldapGroups } =
-    req.body as Record<string, string | string[]>;
+router.post('/new', async (req: Request, res: Response) => {
+  const {
+    firstName, lastName, email, secondaryEmail, phone,
+    role, expiryDate, ldapGroups, sshKeys, githubUsername, slackUsername,
+  } = req.body as Record<string, string | string[]>;
 
-  const cleanEmail = (email as string).trim().toLowerCase();
   const cleanFirst = (firstName as string).trim();
   const cleanLast = (lastName as string).trim();
+  const cleanEmail = (email as string).trim().toLowerCase();
   const cleanSecondary = (secondaryEmail as string)?.trim().toLowerCase() || null;
   const cleanPhone = (phone as string)?.trim() || null;
+  const cleanGithub = (githubUsername as string)?.trim() || null;
+  const cleanSlack = (slackUsername as string)?.trim() || null;
+  const sshPublicKeys = ((sshKeys as string) || '')
+    .split('\n').map(k => k.trim()).filter(Boolean);
 
   const user: NewUser = {
     username: generateUsername(cleanFirst, cleanLast, cleanEmail),
@@ -150,13 +145,25 @@ router.post('/new/sso', async (req: Request, res: Response) => {
     role: role as string,
     expiryDate: expiryDate as string,
     ldapGroups: [ldapGroups ?? []].flat(),
+    sshPublicKeys,
     githubTeams: [],
     serverGroups: [],
   };
 
-  const result = await udm.createUser(user);
+  // 1. Create LDAP account
+  const ldapResult = await ldap.createUser(user);
 
-  if (result.status === 'success') {
+  // 2. Add SSH keys if creation succeeded
+  const sshResults: Array<{ preview: string; status: string; message: string }> = [];
+  if (ldapResult.status !== 'failed') {
+    for (const key of sshPublicKeys) {
+      const r = await ldap.addSshKey(user.username, key);
+      sshResults.push({ preview: key.slice(0, 40) + '…', status: r.status, message: r.message });
+    }
+  }
+
+  // 3. Write to DB
+  if (ldapResult.status === 'success' || ldapResult.status === 'already_exists') {
     await db.query(
       `INSERT INTO users
          (username, first_name, last_name, email, secondary_email, phone, role, expiry_date, ldap_groups, last_synced_at)
@@ -165,63 +172,25 @@ router.post('/new/sso', async (req: Request, res: Response) => {
       [user.username, user.firstName, user.lastName, user.email,
        cleanSecondary, cleanPhone, user.role, user.expiryDate, user.ldapGroups],
     );
-    if (user.role) {
-      udm.updateUserLdapFields(user.username, { role: user.role }).catch((err) =>
-        console.warn(`[wizard] LDAP role write-back failed for ${user.username}:`, err),
+    if (cleanGithub || cleanSlack) {
+      await db.query(
+        `UPDATE users SET github_username = $1, slack_username = $2, updated_at = NOW()
+         WHERE username = $3`,
+        [cleanGithub, cleanSlack, user.username],
       );
     }
+    if (cleanGithub) triggerGithubInvite(cleanGithub);
   }
 
-  req.session.wizard = { user, steps: { sso: result } };
-
-  res.render('admin/users/new/step1-result', {
+  res.render('admin/users/new-result', {
     user,
-    result,
-    nextUrl: '/admin/users/new/github-slack',
+    ldapResult,
+    sshResults,
+    tempPassword: ldapResult.tempPassword,
   });
 });
 
-router.get('/new/github-slack', (req: Request, res: Response) => {
-  if (!req.session.wizard?.steps.sso) return res.redirect('/admin/users/new');
-  res.render('admin/users/new/step2', { wizard: req.session.wizard });
-});
-
-router.post('/new/github-slack', async (req: Request, res: Response) => {
-  if (!req.session.wizard?.steps.sso) return res.redirect('/admin/users/new');
-
-  const { githubUsername, slackUsername } = req.body as Record<string, string>;
-  const { username } = req.session.wizard.user;
-
-  const cleanGithub = githubUsername?.trim() || null;
-  const cleanSlack = slackUsername?.trim() || null;
-
-  await db.query(
-    `UPDATE users SET github_username = $1, slack_username = $2, updated_at = NOW()
-     WHERE username = $3`,
-    [cleanGithub, cleanSlack, username],
-  );
-
-  if (cleanGithub || cleanSlack) {
-    const ldapFields: { slackId?: string | null; githubUsername?: string | null } = {};
-    if (cleanSlack) ldapFields.slackId = cleanSlack;
-    if (cleanGithub) ldapFields.githubUsername = cleanGithub;
-    udm.updateUserLdapFields(username, ldapFields).catch((err) =>
-      console.warn(`[wizard] LDAP write-back failed for ${username}:`, err),
-    );
-  }
-
-  if (cleanGithub) triggerGithubInvite(cleanGithub);
-
-  res.redirect('/admin/users/new/server');
-});
-
-router.get('/new/server', (req: Request, res: Response) => {
-  if (!req.session.wizard?.steps.sso) return res.redirect('/admin/users/new');
-  res.render('admin/users/new/step3', { wizard: req.session.wizard });
-});
-
 // ── Helpers ───────────────────────────────────────────────────────
-
 function triggerGithubInvite(githubUsername: string): void {
   const base = process.env.GITHUB_APP_URL ?? 'http://github-app:3001';
   fetch(`${base}/invite`, {
