@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../../services/db';
-import * as udm from '../../services/udm';
+import { listGroups } from '../../services/ldap';
 
 const router = Router();
 // requireAdmin is applied at the admin/index.ts level
@@ -46,7 +46,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 
   let allGroups: string[] = [];
   try {
-    allGroups = await udm.listGroups();
+    allGroups = await listGroups();
   } catch (err) {
     console.error('[admin/projects] Failed to fetch groups:', err);
   }

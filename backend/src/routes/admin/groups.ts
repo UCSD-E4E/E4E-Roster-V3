@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { requireAdmin } from '../../middleware/requireAdmin';
-import { createGroup } from '../../services/udm';
+import { createGroup } from '../../services/ldap';
 import { db } from '../../services/db';
 
 const router = Router();
