@@ -1,0 +1,65 @@
+# Local testing — no Traefik, host networking so VPN routes are inherited.
+# See DEBUG_CHANGES.md — do not use in production.
+#
+# IMPORTANT: with network_mode: host, set DB_HOST=localhost in .env
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml up --build
+#   docker compose -f docker-compose.local.yml -f docker-compose.local.dev.yml up --build
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    # network_mode: host — ports: is ignored, container binds directly to host ports
+    network_mode: host
+    env_file: .env
+    environment:
+      - VIEWS_DIR=/app/views
+      - STATIC_DIR=/app/public
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    network_mode: host
+    environment:
+      POSTGRES_DB: ${DB_NAME:-e4e_roster}
+      POSTGRES_USER: ${DB_USER:-e4e}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-e4e} -d ${DB_NAME:-e4e_roster}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # github-app:
+  #   build:
+  #     context: .
+  #     dockerfile: github-app/Dockerfile
+  #   network_mode: host
+  #   env_file: .env
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+  # slackbot:
+  #   build:
+  #     context: .
+  #     dockerfile: slackbot/Dockerfile
+  #   network_mode: host
+  #   env_file: .env
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+volumes:
+  postgres_data:

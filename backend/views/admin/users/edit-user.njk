@@ -76,8 +76,15 @@
             {% endfor %}
           </div>
           {% else %}
-          <p class="form-hint">Could not fetch groups from UDM.</p>
+          <p class="form-hint">Could not fetch groups from LDAP.</p>
           {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="sshKeys">SSH public keys <span class="text-muted">(one per line, ed25519 only — replaces existing keys)</span></label>
+          <textarea id="sshKeys" name="sshKeys" rows="4" autocomplete="off"
+                    placeholder="ssh-ed25519 AAAA...">{% for key in sshPublicKeys %}{{ key }}
+{% endfor %}</textarea>
         </div>
 
         <div class="form-actions">

@@ -1,0 +1,52 @@
+{% extends "layout.njk" %}
+{% block title %}Add Member — Result — {{ project.name }}{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "pl/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <h2>Add Member — {{ user.username }}</h2>
+    </div>
+
+    <div class="card" style="max-width:640px">
+
+      {% if ldapResult.status === 'success' %}
+      <div class="alert alert-success">{{ ldapResult.message }}</div>
+      {% elif ldapResult.status === 'already_exists' %}
+      <div class="alert alert-warning">{{ ldapResult.message }}</div>
+      {% else %}
+      <div class="alert alert-error">{{ ldapResult.message }}</div>
+      {% endif %}
+
+      {% if tempPassword %}
+      <div class="form-group" style="margin-top:.75rem">
+        <label>Temporary password</label>
+        <code style="display:block;padding:.5rem;background:var(--surface-2);border-radius:4px;font-size:.95rem">{{ tempPassword }}</code>
+        <span class="form-hint">Share this securely with the member — it won't be shown again.</span>
+      </div>
+      {% endif %}
+
+      {% if ldapResult.status !== 'failed' %}
+      <table class="detail-table" style="margin-top:1rem">
+        <tr><th>Username</th><td>{{ user.username }}</td></tr>
+        <tr><th>Name</th><td>{{ user.firstName }} {{ user.lastName }}</td></tr>
+        <tr><th>Email</th><td>{{ user.email }}</td></tr>
+        <tr><th>Expiry</th><td>{{ user.expiryDate }}</td></tr>
+        <tr><th>Groups</th><td>{{ user.ldapGroups | join(', ') or '—' }}</td></tr>
+      </table>
+      {% endif %}
+
+      <div class="form-actions" style="margin-top:1.5rem">
+        {% if ldapResult.status === 'failed' %}
+        <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-secondary">← Try Again</a>
+        {% else %}
+        <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-secondary">Add Another</a>
+        {% endif %}
+        <a href="/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Back to Members</a>
+      </div>
+
+    </div>
+  </main>
+</div>
+{% endblock %}
