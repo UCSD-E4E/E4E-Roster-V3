@@ -1,6 +1,7 @@
 // TEMPORARY — see /DEBUG_CHANGES.md before merging to main
 import { Router } from 'express';
 import { listUsers, listGroups, createGroup, createUser, addSshKey, setSshKeys, addUserToGroup, removeUserFromGroup, generateUsername, updateUserGroups, updateUserExpiry } from '../../services/ldap';
+import { getAllOrgs, getAllOrgLdapMappings } from '../../services/db';
 
 const router = Router();
 
@@ -154,6 +155,17 @@ router.put('/ldap/users/:username/ssh-keys', async (req, res) => {
 
   const result = await setSshKeys(username, keys);
   res.status(result.status === 'success' ? 200 : 500).json({ ok: result.status === 'success', ...result });
+});
+
+// List all orgs and their LDAP group mappings
+router.get('/orgs', async (_req, res) => {
+  try {
+    const [orgs, mappings] = await Promise.all([getAllOrgs(), getAllOrgLdapMappings()]);
+    res.json({ ok: true, orgs, mappings });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ ok: false, error: message });
+  }
 });
 
 export default router;
