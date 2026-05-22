@@ -1,0 +1,64 @@
+{% extends "layout.njk" %}
+{% block title %}{{ org.name }} — Members{% endblock %}
+{% block body %}
+<div class="app-layout">
+  <header class="app-header" {% if org.theme_color %}style="border-bottom: 3px solid {{ org.theme_color }}"{% endif %}>
+    <span class="app-header-logo">{{ org.name }}</span>
+    <span class="text-muted" style="font-size:.85rem">Org Admin</span>
+    <nav class="app-header-nav" style="margin-left:auto">
+      <a href="/orgs/{{ org.slug }}/admin">Projects</a>
+      <a href="/orgs/{{ org.slug }}/admin/members" class="active">Members</a>
+      <a href="/orgs/{{ org.slug }}">← Org</a>
+    </nav>
+  </header>
+  <main class="app-main">
+
+    <div class="page-header">
+      <h2>Members</h2>
+      <p class="text-muted" style="font-size:.85rem">
+        Users who belong to any group mapped to {{ org.name }}.
+      </p>
+      <div style="display:flex;gap:.5rem;margin-top:.75rem">
+        <a href="/orgs/{{ org.slug }}/admin/members/add" class="btn btn-secondary btn-sm">Add Existing User</a>
+        <a href="/orgs/{{ org.slug }}/admin/members/new" class="btn btn-primary btn-sm">New User</a>
+      </div>
+    </div>
+
+    {% if users.length %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Expiry</th>
+          <th>Groups</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.first_name }} {{ u.last_name }}</td>
+          <td><code>{{ u.username }}</code></td>
+          <td>{{ u.email }}</td>
+          <td>{{ u.role or '—' }}</td>
+          <td>{{ u.expiry_date or '—' }}</td>
+          <td>
+            {% for g in u.ldap_groups %}
+            {% if g in orgGroups %}
+            <span class="badge badge-info">{{ g }}</span>
+            {% endif %}
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">No members found. Make sure LDAP group mappings are configured for this org.</p>
+    {% endif %}
+
+  </main>
+</div>
+{% endblock %}

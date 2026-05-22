@@ -1,0 +1,36 @@
+{% extends "layout.njk" %}
+{% block title %}{{ org.name }}{% endblock %}
+{% block body %}
+<div class="app-layout">
+  <header class="app-header" {% if org.theme_color %}style="border-bottom: 3px solid {{ org.theme_color }}"{% endif %}>
+    <span class="app-header-logo">{{ org.name }}</span>
+    <nav class="app-header-nav" style="margin-left:auto">
+      {% if user.isSystemAdmin or (user.orgRoles and user.orgRoles | selectattr('orgSlug', 'equalto', org.slug) | selectattr('role', 'equalto', 'org_admin') | list | length) %}
+      <a href="/orgs/{{ org.slug }}/admin">Admin</a>
+      {% endif %}
+      <a href="/dashboard">Dashboard</a>
+      <a href="/account">{{ user.name }}</a>
+    </nav>
+  </header>
+  <main class="app-main">
+
+    <div class="page-header">
+      <h2>{{ org.name }} — Projects</h2>
+    </div>
+
+    {% if projects.length %}
+    <div class="card-grid">
+      {% for project in projects %}
+      <div class="card">
+        <h3>{{ project.name }}</h3>
+        {% if project.description %}<p class="text-muted">{{ project.description }}</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted">No projects yet for this organisation.</p>
+    {% endif %}
+
+  </main>
+</div>
+{% endblock %}

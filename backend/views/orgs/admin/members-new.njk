@@ -1,0 +1,136 @@
+{% extends "layout.njk" %}
+{% block title %}New Member — {{ org.name }}{% endblock %}
+{% block body %}
+<div class="app-layout">
+  <header class="app-header" {% if org.theme_color %}style="border-bottom: 3px solid {{ org.theme_color }}"{% endif %}>
+    <span class="app-header-logo">{{ org.name }}</span>
+    <span class="text-muted" style="font-size:.85rem">Org Admin</span>
+    <nav class="app-header-nav" style="margin-left:auto">
+      <a href="/orgs/{{ org.slug }}/admin">Projects</a>
+      <a href="/orgs/{{ org.slug }}/admin/members" class="active">Members</a>
+      <a href="/orgs/{{ org.slug }}">← Org</a>
+    </nav>
+  </header>
+  <main class="app-main">
+
+    <div class="page-header">
+      <a href="/orgs/{{ org.slug }}/admin/members" style="font-size:.85rem;color:var(--text-muted)">← Members</a>
+      <h2 style="margin:.25rem 0 0">New Member</h2>
+    </div>
+
+    <div class="card" style="max-width:640px">
+      <form method="POST" action="/orgs/{{ org.slug }}/admin/members/new">
+
+        <h3>Basic Info</h3>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="firstName">First name</label>
+            <input type="text" id="firstName" name="firstName" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="lastName">Last name</label>
+            <input type="text" id="lastName" name="lastName" required autocomplete="off">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="email">Institutional email</label>
+          <input type="email" id="email" name="email" required autocomplete="off">
+          <span class="form-hint">Used to generate the username.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="secondaryEmail">Long-term email <span class="text-muted">(optional)</span></label>
+          <input type="email" id="secondaryEmail" name="secondaryEmail" autocomplete="off"
+                 placeholder="personal@gmail.com">
+          <span class="form-hint">Personal email — persists after graduation.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="phone">Phone <span class="text-muted">(optional)</span></label>
+          <input type="tel" id="phone" name="phone" autocomplete="off" placeholder="+1 555 000 0000">
+        </div>
+
+        <div class="form-group">
+          <label>Username <span class="text-muted">(auto-generated)</span></label>
+          <div class="username-preview" id="usernamePreview">—</div>
+          <span class="form-hint">first initial · last name · 3-digit hash of email</span>
+        </div>
+
+        <h3 style="margin-top:1.5rem">Account</h3>
+
+        <div class="form-group">
+          <label>Role</label>
+          <div class="username-preview" style="font-size:.9rem">Student</div>
+          <span class="form-hint">All members added here are students. A system admin can change this later.</span>
+        </div>
+
+        <div class="form-group">
+          <label>Account expiry</label>
+          <div class="username-preview" id="expiryPreview" style="font-size:.9rem">{{ expiryDate }}</div>
+          <span class="form-hint">Fixed at 90 days from today. A system admin can extend this if needed.</span>
+        </div>
+
+        <h3 style="margin-top:1.5rem">Access <span class="text-muted" style="font-weight:400;font-size:.9rem">({{ org.name }} groups)</span></h3>
+
+        <div class="form-group">
+          {% if groups.length %}
+          <div class="checkbox-grid">
+            {% for group in groups %}
+            <label class="checkbox-label">
+              <input type="checkbox" name="ldapGroups" value="{{ group }}" checked> {{ group }}
+            </label>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="form-hint">No groups configured for this org yet — create one on the admin overview.</p>
+          {% endif %}
+        </div>
+
+        <h3 style="margin-top:1.5rem">Integrations <span class="text-muted" style="font-weight:400;font-size:.9rem">(optional)</span></h3>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="githubUsername">GitHub username</label>
+            <input type="text" id="githubUsername" name="githubUsername" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="slackUsername">Slack username</label>
+            <input type="text" id="slackUsername" name="slackUsername" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create Member</button>
+          <a href="/orgs/{{ org.slug }}/admin/members" class="btn btn-ghost">Cancel</a>
+        </div>
+
+      </form>
+    </div>
+  </main>
+</div>
+
+<script>
+  async function sha512digits(email) {
+    const msgBuffer = new TextEncoder().encode(email);
+    const hashBuffer = await crypto.subtle.digest('SHA-512', msgBuffer);
+    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return (Number(BigInt('0x' + hashHex) % 999n)).toString().padStart(3, '0');
+  }
+
+  async function updatePreview() {
+    const first = document.getElementById('firstName').value.trim().replace(/[^a-zA-Z]/g, '');
+    const last  = document.getElementById('lastName').value.trim().replace(/[^a-zA-Z]/g, '');
+    const email = document.getElementById('email').value.trim().toLowerCase();
+    const preview = document.getElementById('usernamePreview');
+    if (!first || !last || !email.includes('@')) { preview.textContent = '—'; return; }
+    const digits = await sha512digits(email);
+    preview.textContent = `${first[0].toLowerCase()}.${last.toLowerCase()}.${digits}`;
+  }
+
+  ['firstName', 'lastName', 'email'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updatePreview);
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,101 @@
+{% extends "layout.njk" %}
+{% block title %}{{ org.name }} — Admin{% endblock %}
+{% block body %}
+<div class="app-layout">
+  <header class="app-header" {% if org.theme_color %}style="border-bottom: 3px solid {{ org.theme_color }}"{% endif %}>
+    <span class="app-header-logo">{{ org.name }}</span>
+    <span class="text-muted" style="font-size:.85rem">Org Admin</span>
+    <nav class="app-header-nav" style="margin-left:auto">
+      <a href="/orgs/{{ org.slug }}/admin" class="active">Projects</a>
+      <a href="/orgs/{{ org.slug }}/admin/members">Members</a>
+      <a href="/orgs/{{ org.slug }}">← Org</a>
+    </nav>
+  </header>
+  <main class="app-main">
+
+    <div class="page-header">
+      <h2>Projects</h2>
+    </div>
+
+    {# Org LDAP groups #}
+    <div class="card" style="max-width:560px;margin-bottom:2rem">
+      <h3>LDAP Groups</h3>
+      <p class="text-muted" style="font-size:.85rem;margin-bottom:1rem">
+        Groups mapped to this org. Create a new group to add members — existing unmapped groups must be added by a system admin.
+      </p>
+      {% if mappings.length %}
+      <table class="table" style="margin-bottom:1rem">
+        <thead><tr><th>Group</th><th>Role</th></tr></thead>
+        <tbody>
+          {% for m in mappings %}
+          <tr>
+            <td><code>{{ m.ldap_group }}</code></td>
+            <td>{{ m.role }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="form-hint">No groups mapped yet.</p>
+      {% endif %}
+      <form method="POST" action="/orgs/{{ org.slug }}/admin/groups" style="display:grid;grid-template-columns:1fr auto auto;gap:.5rem;align-items:flex-end">
+        <div class="form-group" style="margin:0">
+          <label style="font-size:.8rem">New group name</label>
+          <input type="text" name="name" required autocomplete="off" placeholder="e.g. krg-new-project">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:.8rem">Role</label>
+          <select name="role">
+            <option value="member">member</option>
+            <option value="project_lead">project_lead</option>
+            <option value="org_admin">org_admin</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-secondary btn-sm" style="align-self:flex-end">Create</button>
+      </form>
+    </div>
+
+    {# Create project #}
+    <div class="card" style="max-width:560px;margin-bottom:2rem">
+      <h3>New Project</h3>
+      <form method="POST" action="/orgs/{{ org.slug }}/admin/projects">
+        <div class="form-group">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" required autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="description">Description <span class="text-muted">(optional)</span></label>
+          <input type="text" id="description" name="description" autocomplete="off">
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create Project</button>
+        </div>
+      </form>
+    </div>
+
+    {# Project list #}
+    {% if projects.length %}
+    <table class="table">
+      <thead>
+        <tr><th>Project</th><th>Groups</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for project in projects %}
+        <tr>
+          <td>
+            <strong>{{ project.name }}</strong>
+            {% if project.description %}<br><span class="text-muted" style="font-size:.85rem">{{ project.description }}</span>{% endif %}
+          </td>
+          <td>{{ project.group_count }} group(s)</td>
+          <td><a href="/orgs/{{ org.slug }}/admin/projects/{{ project.id }}" class="btn btn-ghost btn-sm">Manage</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">No projects yet.</p>
+    {% endif %}
+
+  </main>
+</div>
+{% endblock %}

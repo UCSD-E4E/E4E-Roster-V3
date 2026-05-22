@@ -1,0 +1,99 @@
+{% extends "layout.njk" %}
+{% block title %}{{ org.name }} — {{ project.name }}{% endblock %}
+{% block body %}
+<div class="app-layout">
+  <header class="app-header" {% if org.theme_color %}style="border-bottom: 3px solid {{ org.theme_color }}"{% endif %}>
+    <span class="app-header-logo">{{ org.name }}</span>
+    <span class="text-muted" style="font-size:.85rem">Org Admin</span>
+    <nav class="app-header-nav" style="margin-left:auto">
+      <a href="/orgs/{{ org.slug }}/admin">Projects</a>
+      <a href="/orgs/{{ org.slug }}/admin/members">Members</a>
+      <a href="/orgs/{{ org.slug }}">← Org</a>
+    </nav>
+  </header>
+  <main class="app-main">
+
+    <div class="page-header" style="display:flex;align-items:center;gap:1rem">
+      <div>
+        <a href="/orgs/{{ org.slug }}/admin" style="font-size:.85rem;color:var(--text-muted)">← All Projects</a>
+        <h2 style="margin:.25rem 0 0">{{ project.name }}</h2>
+      </div>
+      <form method="POST" action="/orgs/{{ org.slug }}/admin/projects/{{ project.id }}/delete"
+            style="margin-left:auto">
+        <button type="submit" class="btn btn-ghost" style="color:var(--danger)"
+                onclick="return confirm('Delete {{ project.name }}?')">Delete Project</button>
+      </form>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start">
+
+      {# LDAP groups #}
+      <div class="card">
+        <h3>LDAP Groups</h3>
+        <p class="text-muted" style="font-size:.85rem;margin-bottom:1rem">
+          Only groups mapped to {{ org.name }} can be added here.
+        </p>
+
+        {% if mapped.length %}
+        <table class="table" style="margin-bottom:1rem">
+          <thead><tr><th>Group</th><th></th></tr></thead>
+          <tbody>
+            {% for group in mapped %}
+            <tr>
+              <td><code>{{ group }}</code></td>
+              <td>
+                <form method="POST" action="/orgs/{{ org.slug }}/admin/projects/{{ project.id }}/groups/remove">
+                  <input type="hidden" name="ldapGroup" value="{{ group }}">
+                  <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger)">Remove</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="form-hint">No groups assigned yet.</p>
+        {% endif %}
+
+        {% if orgGroups.length %}
+        <form method="POST" action="/orgs/{{ org.slug }}/admin/projects/{{ project.id }}/groups"
+              style="display:flex;gap:.5rem;align-items:flex-end">
+          <div class="form-group" style="margin:0;flex:1">
+            <label style="font-size:.8rem">Add group</label>
+            <select name="ldapGroup">
+              {% for group in orgGroups %}
+              {% if group not in mapped %}
+              <option value="{{ group }}">{{ group }}</option>
+              {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-secondary btn-sm">Add</button>
+        </form>
+        {% else %}
+        <p class="form-hint">No org groups configured — ask a system admin to add mappings.</p>
+        {% endif %}
+      </div>
+
+      {# Edit project settings #}
+      <div class="card">
+        <h3>Settings</h3>
+        <form method="POST" action="/orgs/{{ org.slug }}/admin/projects/{{ project.id }}/edit">
+          <div class="form-group">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" value="{{ project.name }}" required>
+          </div>
+          <div class="form-group">
+            <label for="description">Description</label>
+            <input type="text" id="description" name="description" value="{{ project.description or '' }}">
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+  </main>
+</div>
+{% endblock %}
