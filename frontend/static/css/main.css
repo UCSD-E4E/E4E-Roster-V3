@@ -196,15 +196,18 @@ a:hover { text-decoration: underline; }
 .nav-dropdown-menu {
   display: none;
   position: absolute;
-  top: calc(100% + .5rem);
-  left: 0;
+  top: 100%;
+  right: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 6px 20px rgba(0,0,0,.14);
-  min-width: 170px;
+  min-width: 220px;
   z-index: 200;
   overflow: hidden;
+  /* padding-top bridges the invisible gap so hover doesn't break mid-travel */
+  padding-top: .4rem;
+  margin-top: -.4rem;
 }
 
 .nav-dropdown-menu a {
@@ -213,7 +216,7 @@ a:hover { text-decoration: underline; }
   font-size: .88rem;
   color: var(--text);
 }
-.nav-dropdown-menu a:hover { background: var(--bg); text-decoration: none; }
+.nav-dropdown-menu a:hover { background: var(--navy); color: #fff; text-decoration: none; }
 
 .nav-dropdown-divider {
   height: 1px;
@@ -223,6 +226,30 @@ a:hover { text-decoration: underline; }
 
 .nav-dropdown:hover .nav-dropdown-menu,
 .nav-dropdown:focus-within .nav-dropdown-menu { display: block; }
+
+.nav-orgs-menu { min-width: 260px; }
+
+.nav-org-section {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .45rem 1rem .3rem;
+  pointer-events: none;
+}
+
+.nav-org-name {
+  font-weight: 700;
+  font-size: .82rem;
+  color: var(--navy);
+  flex: 1;
+}
+
+.nav-org-role {
+  font-size: .72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
 
 /* ── Section strip (per-section tabs) ────── */
 .section-strip {

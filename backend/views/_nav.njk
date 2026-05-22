@@ -1,38 +1,49 @@
 <header class="app-header">
   <div class="app-header-inner">
 
-    <a href="/dashboard" class="app-brand">E4E Roster</a>
+    <a href="/dashboard" class="app-brand">KRG Roster</a>
 
-    {% if currentUser and currentUser.orgRoles and currentUser.orgRoles.length %}
-    <div class="nav-orgs">
-      {% for orgRole in currentUser.orgRoles %}
+    <nav class="app-nav">
+      {% if currentUser and currentUser.isAdmin %}
       <div class="nav-dropdown">
-        <button class="nav-org-chip" type="button">
-          {% if orgRole.themeColor %}
-          <span class="nav-org-dot" style="background:{{ orgRole.themeColor }}"></span>
-          {% endif %}
-          {{ orgRole.orgName }} <span class="nav-caret">▾</span>
-        </button>
+        <button class="nav-org-chip" type="button">Admin <span class="nav-caret">▾</span></button>
         <div class="nav-dropdown-menu">
-          <a href="/orgs/{{ orgRole.orgSlug }}">Projects</a>
-          {% if orgRole.role === 'org_admin' or currentUser.isSystemAdmin %}
+          <a href="/admin/users">Users</a>
+          <a href="/admin/projects">Projects</a>
+          <a href="/admin/integrations">Integrations</a>
+          {% if currentUser.isSystemAdmin %}
           <div class="nav-dropdown-divider"></div>
-          <a href="/orgs/{{ orgRole.orgSlug }}/admin">Org Admin</a>
-          <a href="/orgs/{{ orgRole.orgSlug }}/admin/members">Members</a>
+          <a href="/system/orgs">Organisations</a>
+          <a href="/system/admin-groups">Admin Groups</a>
           {% endif %}
         </div>
       </div>
-      {% endfor %}
-    </div>
-    {% endif %}
+      {% endif %}
+      {% if currentUser and currentUser.orgRoles and currentUser.orgRoles.length %}
+      <div class="nav-dropdown">
+        <button class="nav-org-chip" type="button">
+          Orgs <span class="nav-caret">▾</span>
+        </button>
+        <div class="nav-dropdown-menu nav-orgs-menu">
+          {% for orgRole in currentUser.orgRoles %}
+          {% if not loop.first %}<div class="nav-dropdown-divider"></div>{% endif %}
+          <div class="nav-org-section">
+            {% if orgRole.themeColor %}
+            <span class="nav-org-dot" style="background:{{ orgRole.themeColor }}"></span>
+            {% endif %}
+            <span class="nav-org-name">{{ orgRole.orgName }}</span>
+            <span class="nav-org-role">{{ orgRole.role }}</span>
+          </div>
+          <a href="/orgs/{{ orgRole.orgSlug }}">Projects</a>
+          {% if orgRole.role === 'org_admin' or currentUser.isSystemAdmin %}
+          <a href="/orgs/{{ orgRole.orgSlug }}/admin">Manage Org</a>
+          <a href="/orgs/{{ orgRole.orgSlug }}/admin/members">Members</a>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
 
-    <nav class="app-nav">
-      {% if currentUser and currentUser.isSystemAdmin %}
-      <a href="/system/orgs">System</a>
-      {% endif %}
-      {% if currentUser and currentUser.isAdmin %}
-      <a href="/admin/users">Admin</a>
-      {% endif %}
       <a href="/dashboard">Dashboard</a>
       <a href="/account" class="nav-user">{{ currentUser.name or currentUser.username }}</a>
       <form method="POST" action="/logout" style="display:inline">
