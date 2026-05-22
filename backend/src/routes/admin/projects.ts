@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { db } from '../../services/db';
+import { db, upsertOrgGroupMapping } from '../../services/db';
 import { listGroups } from '../../services/ldap';
 
 const router = Router();
@@ -65,6 +65,13 @@ router.post('/:id/groups', async (req: Request, res: Response) => {
     `INSERT INTO project_ldap_groups (project_id, ldap_group) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
     [id, ldapGroup],
   );
+  const { rows: [proj] } = await db.query<{ org_id: number | null }>(
+    `SELECT org_id FROM projects WHERE id = $1`,
+    [id],
+  );
+  if (proj?.org_id) {
+    await upsertOrgGroupMapping(proj.org_id, ldapGroup, 'member');
+  }
   res.redirect(`/admin/projects/${id}`);
 });
 

@@ -14,9 +14,20 @@ router.get('/new', async (req: Request, res: Response) => {
   const githubBase = process.env.GITHUB_APP_URL ?? 'http://github-app:3001';
   const slackBase  = process.env.SLACK_BOT_URL  ?? 'http://slackbot:3002';
 
+  async function fetchWithTimeout(url: string, ms = 2000): Promise<unknown> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    try {
+      const r = await fetch(url, { signal: controller.signal });
+      return await r.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   const [teamsRes, channelsRes] = await Promise.allSettled([
-    fetch(`${githubBase}/teams`).then((r) => r.json()),
-    fetch(`${slackBase}/channels`).then((r) => r.json()),
+    fetchWithTimeout(`${githubBase}/teams`),
+    fetchWithTimeout(`${slackBase}/channels`),
   ]);
 
   const teams    = teamsRes.status    === 'fulfilled' ? (teamsRes.value    as { slug: string; name: string }[]) : [];
