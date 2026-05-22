@@ -35,6 +35,18 @@
       </table>
       {% endif %}
 
+      {% if sshResults and sshResults.length %}
+      <h3 style="margin-top:1.5rem">SSH Keys</h3>
+      <table class="detail-table" style="margin-top:.5rem">
+        {% for r in sshResults %}
+        <tr>
+          <td><code style="font-size:.8rem">{{ r.preview }}</code></td>
+          <td>{% if r.status === 'success' %}<span style="color:var(--success)">added</span>{% else %}<span style="color:var(--danger)" title="{{ r.message }}">failed</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+
       <div class="form-actions" style="margin-top:1.5rem">
         {% if ldapResult.status === 'failed' %}
         <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage/new" class="btn btn-secondary">← Try Again</a>

@@ -276,7 +276,7 @@ router.get('/admin/members/new', requireOrgAdmin, async (req: Request, res: Resp
 
 router.post('/admin/members/new', requireOrgAdmin, async (req: Request, res: Response) => {
   const org = res.locals.org;
-  const { firstName, lastName, email, secondaryEmail, phone, githubUsername, slackUsername, ldapGroups } =
+  const { firstName, lastName, email, secondaryEmail, phone, githubUsername, slackUsername, ldapGroups, sshKeys } =
     req.body as Record<string, string | string[]>;
 
   const groups = await orgGroups(org.id);
@@ -287,6 +287,7 @@ router.post('/admin/members/new', requireOrgAdmin, async (req: Request, res: Res
   const cleanPhone  = (phone as string)?.trim() || null;
   const cleanGithub = (githubUsername as string)?.trim() || null;
   const cleanSlack  = (slackUsername as string)?.trim() || null;
+  const sshPublicKeys = ((sshKeys as string) || '').split('\n').map(k => k.trim()).filter(Boolean);
 
   const chosenGroups = [ldapGroups ?? []].flat().filter(g => groups.includes(g));
 
@@ -298,14 +299,19 @@ router.post('/admin/members/new', requireOrgAdmin, async (req: Request, res: Res
     role: 'student',
     expiryDate: ninetyDaysFromNow(),
     ldapGroups: chosenGroups,
-    sshPublicKeys: [],
+    sshPublicKeys,
     githubTeams: [],
     serverGroups: [],
   };
 
   const ldapResult = await ldap.createUser(user);
 
+  const sshResults: Array<{ preview: string; status: string; message: string }> = [];
   if (ldapResult.status !== 'failed') {
+    for (const key of sshPublicKeys) {
+      const r = await ldap.addSshKey(user.username, key);
+      sshResults.push({ preview: key.slice(0, 40) + '…', status: r.status, message: r.message });
+    }
     await db.query(
       `INSERT INTO users
          (username, first_name, last_name, email, secondary_email, phone, role,
@@ -322,7 +328,7 @@ router.post('/admin/members/new', requireOrgAdmin, async (req: Request, res: Res
     if (cleanGithub) triggerGithubInvite(cleanGithub);
   }
 
-  res.render('orgs/admin/members-new-result', { org, user, ldapResult, tempPassword: ldapResult.tempPassword });
+  res.render('orgs/admin/members-new-result', { org, user, ldapResult, sshResults, tempPassword: ldapResult.tempPassword });
 });
 
 export default router;

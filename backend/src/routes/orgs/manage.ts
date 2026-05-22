@@ -127,7 +127,7 @@ router.get('/new', async (_req: Request, res: Response) => {
 
 router.post('/new', async (req: Request, res: Response) => {
   const { project, org } = res.locals;
-  const { firstName, lastName, email, secondaryEmail, phone, githubUsername, slackUsername, ldapGroups } =
+  const { firstName, lastName, email, secondaryEmail, phone, githubUsername, slackUsername, ldapGroups, sshKeys } =
     req.body as Record<string, string | string[]>;
 
   const projGroups = await getProjectGroups(project.id);
@@ -138,6 +138,7 @@ router.post('/new', async (req: Request, res: Response) => {
   const cleanPhone     = (phone as string)?.trim() || null;
   const cleanGithub    = (githubUsername as string)?.trim() || null;
   const cleanSlack     = (slackUsername as string)?.trim() || null;
+  const sshPublicKeys  = ((sshKeys as string) || '').split('\n').map(k => k.trim()).filter(Boolean);
 
   const chosenGroups = [ldapGroups ?? []].flat().filter(g => projGroups.includes(g));
 
@@ -149,14 +150,19 @@ router.post('/new', async (req: Request, res: Response) => {
     role: 'student',
     expiryDate: ninetyDaysFromNow(),
     ldapGroups: chosenGroups,
-    sshPublicKeys: [],
+    sshPublicKeys,
     githubTeams: [],
     serverGroups: [],
   };
 
   const ldapResult = await ldap.createUser(user);
 
+  const sshResults: Array<{ preview: string; status: string; message: string }> = [];
   if (ldapResult.status !== 'failed') {
+    for (const key of sshPublicKeys) {
+      const r = await ldap.addSshKey(user.username, key);
+      sshResults.push({ preview: key.slice(0, 40) + '…', status: r.status, message: r.message });
+    }
     await db.query(
       `INSERT INTO users
          (username, first_name, last_name, email, secondary_email, phone, role,
@@ -173,7 +179,7 @@ router.post('/new', async (req: Request, res: Response) => {
     if (cleanGithub) triggerGithubInvite(cleanGithub);
   }
 
-  res.render('orgs/manage/new-result', { org, project, user, ldapResult, tempPassword: ldapResult.tempPassword });
+  res.render('orgs/manage/new-result', { org, project, user, ldapResult, sshResults, tempPassword: ldapResult.tempPassword });
 });
 
 // ── Edit user ─────────────────────────────────────────────────────

@@ -80,6 +80,12 @@
           {% endif %}
         </div>
 
+        <div class="form-group">
+          <label for="sshKeys">SSH public keys <span class="text-muted">(optional — one per line, ed25519 only)</span></label>
+          <textarea id="sshKeys" name="sshKeys" rows="4" autocomplete="off"
+                    placeholder="ssh-ed25519 AAAA..."></textarea>
+        </div>
+
         <h3 style="margin-top:1.5rem">Integrations <span class="text-muted" style="font-weight:400;font-size:.9rem">(optional)</span></h3>
 
         <div class="form-row">
