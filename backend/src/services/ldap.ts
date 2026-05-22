@@ -208,16 +208,15 @@ export async function createUser(
   }
 
   const tempPassword = generateTempPassword();
-  // Samba4 requires the password wrapped in double-quotes, encoded as UTF-16LE
-  const encodedPassword = Buffer.from(`"${tempPassword}"`, 'utf16le');
 
   try {
     await withClient(async (client) => {
-      // Samba4 requires the RDN (CN in the DN) to match the cn attribute value — use display name
       const displayName = `${user.firstName} ${user.lastName}`;
       const newDN = `CN=${displayName},${process.env.LDAP_USERS_DN!}`;
 
-      // No POSIX attrs (uidNumber/gidNumber/shell) — SSSD derives these from the AD SID
+      // Step 1: create account disabled with no password required.
+      // Samba4 rejects unicodePwd in the same add() call — password must be
+      // set in a separate modify after the entry exists.
       await client.add(newDN, {
         objectClass: ['top', 'person', 'organizationalPerson', 'user'],
         cn: displayName,
@@ -226,11 +225,26 @@ export async function createUser(
         sAMAccountName: user.username,
         userPrincipalName: `${user.username}@${process.env.LDAP_DOMAIN!}`,
         mail: user.email,
-        // ldapts types don't expose Buffer, but ldapjs underneath handles it correctly
-        unicodePwd: encodedPassword as unknown as string,
-        userAccountControl: '512', // Normal enabled account
+        userAccountControl: '514', // NORMAL_ACCOUNT | ACCOUNTDISABLE (enabled after password is set)
         accountExpires: isoToFileTime(user.expiryDate),
       });
+
+      // Step 2: set the password (requires LDAPS; wrapped in double-quotes, UTF-16LE)
+      const encodedPassword = Buffer.from(`"${tempPassword}"`, 'utf16le');
+      await client.modify(newDN, [
+        new Change({
+          operation: 'replace',
+          modification: new Attribute({ type: 'unicodePwd', values: [encodedPassword as unknown as string] }),
+        }),
+      ]);
+
+      // Step 3: enable the account now that the password is set
+      await client.modify(newDN, [
+        new Change({
+          operation: 'replace',
+          modification: new Attribute({ type: 'userAccountControl', values: ['512'] }),
+        }),
+      ]);
 
       for (const group of user.ldapGroups) {
         try {

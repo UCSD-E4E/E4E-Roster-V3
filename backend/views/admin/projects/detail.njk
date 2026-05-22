@@ -20,6 +20,21 @@
       </div>
     </div>
 
+    {# Org link #}
+    <div class="card" style="margin-top:1.5rem">
+      <h4 style="margin-top:0">Organisation</h4>
+      <form method="POST" action="/admin/projects/{{ project.id }}/set-org"
+            style="display:flex;gap:.5rem;align-items:center">
+        <select name="orgId" style="flex:1;padding:.4rem .6rem;border:1px solid var(--border);border-radius:var(--radius);font-size:.9rem">
+          <option value="">— None —</option>
+          {% for org in orgs %}
+          <option value="{{ org.id }}" {% if org.id === project.org_id %}selected{% endif %}>{{ org.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-primary btn-sm" type="submit">Save</button>
+      </form>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;margin-top:1.5rem;align-items:start">
 
       {# Left: current LDAP groups #}
