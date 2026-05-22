@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { db, upsertOrgGroupMapping } from '../../services/db';
+import { db, upsertOrgGroupMapping, getAllOrgs } from '../../services/db';
 import { listGroups } from '../../services/ldap';
 
 const router = Router();
@@ -33,26 +33,23 @@ router.post('/', async (req: Request, res: Response) => {
 
 router.get('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { rows: [project] } = await db.query<{ id: number; name: string; description: string | null }>(
-    `SELECT id, name, description FROM projects WHERE id = $1`,
+  const { rows: [project] } = await db.query<{ id: number; name: string; description: string | null; org_id: number | null }>(
+    `SELECT id, name, description, org_id FROM projects WHERE id = $1`,
     [id],
   );
   if (!project) return res.status(404).send('Project not found');
 
-  const { rows: mappedGroups } = await db.query<{ ldap_group: string }>(
-    `SELECT ldap_group FROM project_ldap_groups WHERE project_id = $1 ORDER BY ldap_group`,
-    [id],
-  );
-
-  let allGroups: string[] = [];
-  try {
-    allGroups = await listGroups();
-  } catch (err) {
-    console.error('[admin/projects] Failed to fetch groups:', err);
-  }
+  const [{ rows: mappedGroups }, allGroups, orgs] = await Promise.all([
+    db.query<{ ldap_group: string }>(
+      `SELECT ldap_group FROM project_ldap_groups WHERE project_id = $1 ORDER BY ldap_group`,
+      [id],
+    ),
+    listGroups().catch(() => [] as string[]),
+    getAllOrgs(),
+  ]);
 
   const mapped = mappedGroups.map((r) => r.ldap_group);
-  res.render('admin/projects/detail', { project, mapped, allGroups });
+  res.render('admin/projects/detail', { project, mapped, allGroups, orgs });
 });
 
 // ── Add LDAP group to project ─────────────────────────────────────
@@ -97,6 +94,16 @@ router.post('/:id/edit', async (req: Request, res: Response) => {
     `UPDATE projects SET name = $1, description = $2 WHERE id = $3`,
     [name.trim(), description?.trim() || null, id],
   );
+  res.redirect(`/admin/projects/${id}`);
+});
+
+// ── Link / unlink org ─────────────────────────────────────────────
+
+router.post('/:id/set-org', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { orgId } = req.body as { orgId: string };
+  const parsed = orgId ? parseInt(orgId, 10) : null;
+  await db.query(`UPDATE projects SET org_id = $1 WHERE id = $2`, [parsed || null, id]);
   res.redirect(`/admin/projects/${id}`);
 });
 
