@@ -1,0 +1,143 @@
+{% extends "layout.njk" %}
+{% block title %}System — Organisations{% endblock %}
+{% block body %}
+<div class="app-layout">
+  <header class="app-header">
+    <span class="app-header-logo">E4E Roster</span>
+    <span class="text-muted" style="font-size:.85rem">⚙ System Admin</span>
+    <nav class="app-header-nav" style="margin-left:auto">
+      <a href="/system/orgs" class="active">Orgs</a>
+      <a href="/system/admin-groups">Admin Groups</a>
+      <a href="/admin/users">Users</a>
+      <a href="/dashboard">← Dashboard</a>
+    </nav>
+  </header>
+  <main class="app-main">
+
+    <div class="page-header">
+      <h2>Organisations</h2>
+    </div>
+
+    {# Create org form #}
+    <div class="card" style="max-width:560px;margin-bottom:2rem">
+      <h3>New Organisation</h3>
+      <form method="POST" action="/system/orgs">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" required autocomplete="off" placeholder="Kastner Research Group">
+          </div>
+          <div class="form-group">
+            <label for="slug">Slug</label>
+            <input type="text" id="slug" name="slug" required autocomplete="off" placeholder="krg">
+            <span class="form-hint">URL-safe, lowercase. Used in /orgs/:slug</span>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="description">Description <span class="text-muted">(optional)</span></label>
+            <input type="text" id="description" name="description" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="theme_color">Theme colour <span class="text-muted">(hex)</span></label>
+            <input type="color" id="theme_color" name="theme_color" value="#3b82f6">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create Org</button>
+        </div>
+      </form>
+    </div>
+
+    {# Org list #}
+    {% for org in orgs %}
+    <div class="card" style="margin-bottom:1.5rem">
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+        {% if org.theme_color %}
+        <span style="width:14px;height:14px;border-radius:50%;background:{{ org.theme_color }};display:inline-block"></span>
+        {% endif %}
+        <h3 style="margin:0">{{ org.name }} <code style="font-size:.8rem">/orgs/{{ org.slug }}</code></h3>
+        <form method="POST" action="/system/orgs/{{ org.id }}/delete" style="margin-left:auto">
+          <button type="submit" class="btn btn-ghost" style="color:var(--danger)"
+                  onclick="return confirm('Delete {{ org.name }}? This cannot be undone.')">Delete</button>
+        </form>
+      </div>
+
+      {# Edit form #}
+      <details style="margin-bottom:1rem">
+        <summary style="cursor:pointer;font-size:.85rem;color:var(--text-muted)">Edit details</summary>
+        <form method="POST" action="/system/orgs/{{ org.id }}/edit" style="margin-top:.75rem">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Name</label>
+              <input type="text" name="name" value="{{ org.name }}" required>
+            </div>
+            <div class="form-group">
+              <label>Description</label>
+              <input type="text" name="description" value="{{ org.description or '' }}">
+            </div>
+            <div class="form-group">
+              <label>Theme colour</label>
+              <input type="color" name="theme_color" value="{{ org.theme_color or '#3b82f6' }}">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-secondary btn-sm">Save</button>
+        </form>
+      </details>
+
+      {# LDAP group mappings #}
+      <h4 style="margin-bottom:.5rem">LDAP Group → Role Mappings</h4>
+      {% set orgMappings = mappingsByOrg[org.id] %}
+      {% if orgMappings and orgMappings.length %}
+      <table class="table" style="margin-bottom:.75rem">
+        <thead><tr><th>LDAP Group</th><th>Role</th><th></th></tr></thead>
+        <tbody>
+          {% for m in orgMappings %}
+          <tr>
+            <td><code>{{ m.ldap_group }}</code></td>
+            <td><span class="badge badge-{{ 'error' if m.role == 'org_admin' else 'info' }}">{{ m.role }}</span></td>
+            <td>
+              <form method="POST" action="/system/orgs/{{ org.id }}/mappings/remove">
+                <input type="hidden" name="ldap_group" value="{{ m.ldap_group }}">
+                <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger)">Remove</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="form-hint">No mappings yet.</p>
+      {% endif %}
+
+      <form method="POST" action="/system/orgs/{{ org.id }}/mappings" style="display:flex;gap:.5rem;align-items:flex-end">
+        <div class="form-group" style="margin:0;flex:1">
+          <label style="font-size:.8rem">LDAP group</label>
+          {% if allGroups.length %}
+          <select name="ldap_group">
+            {% for group in allGroups %}
+            <option value="{{ group }}">{{ group }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input type="text" name="ldap_group" placeholder="e4e-admin" autocomplete="off">
+          {% endif %}
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:.8rem">Role</label>
+          <select name="role">
+            <option value="member">member</option>
+            <option value="project_lead">project_lead</option>
+            <option value="org_admin">org_admin</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-secondary btn-sm">Add</button>
+      </form>
+    </div>
+    {% else %}
+    <p class="text-muted">No organisations yet. Create one above.</p>
+    {% endfor %}
+
+  </main>
+</div>
+{% endblock %}

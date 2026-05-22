@@ -1,0 +1,64 @@
+{% extends "layout.njk" %}
+{% block title %}System — Admin Groups{% endblock %}
+{% block body %}
+<div class="app-layout">
+  <header class="app-header">
+    <span class="app-header-logo">E4E Roster</span>
+    <span class="text-muted" style="font-size:.85rem">⚙ System Admin</span>
+    <nav class="app-header-nav" style="margin-left:auto">
+      <a href="/system/orgs">Orgs</a>
+      <a href="/system/admin-groups" class="active">Admin Groups</a>
+      <a href="/admin/users">Users</a>
+      <a href="/dashboard">← Dashboard</a>
+    </nav>
+  </header>
+  <main class="app-main">
+
+    <div class="page-header">
+      <h2>System Admin Groups</h2>
+      <p class="text-muted">LDAP groups that grant system admin access, in addition to the <code>ADMIN_GROUP</code> env var.</p>
+    </div>
+
+    <div class="card" style="max-width:560px">
+
+      {% if systemGroups.length %}
+      <table class="table" style="margin-bottom:1.5rem">
+        <thead><tr><th>LDAP Group</th><th></th></tr></thead>
+        <tbody>
+          {% for group in systemGroups %}
+          <tr>
+            <td><code>{{ group }}</code></td>
+            <td>
+              <form method="POST" action="/system/admin-groups/remove">
+                <input type="hidden" name="ldap_group" value="{{ group }}">
+                <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger)">Remove</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="form-hint" style="margin-bottom:1.5rem">No additional system admin groups configured.</p>
+      {% endif %}
+
+      <form method="POST" action="/system/admin-groups" style="display:flex;gap:.5rem;align-items:flex-end">
+        <div class="form-group" style="margin:0;flex:1">
+          <label>Add LDAP group</label>
+          {% if allGroups.length %}
+          <select name="ldap_group">
+            {% for group in allGroups %}
+            <option value="{{ group }}">{{ group }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input type="text" name="ldap_group" placeholder="Domain Admins" autocomplete="off">
+          {% endif %}
+        </div>
+        <button type="submit" class="btn btn-primary">Add</button>
+      </form>
+
+    </div>
+  </main>
+</div>
+{% endblock %}
