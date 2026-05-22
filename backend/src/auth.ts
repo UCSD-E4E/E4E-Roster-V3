@@ -46,6 +46,21 @@ export function setupPassport(client: Client): void {
             }
           }
 
+          // System admins see all orgs as org_admin regardless of group mappings
+          if (sysAdmin) {
+            for (const org of allOrgs) {
+              if (!orgRoleMap.has(org.id)) {
+                orgRoleMap.set(org.id, {
+                  orgId: org.id,
+                  orgSlug: org.slug,
+                  orgName: org.name,
+                  themeColor: org.theme_color,
+                  role: 'org_admin',
+                });
+              }
+            }
+          }
+
           const user: AuthUser = {
             id: userinfo.sub,
             name: (userinfo.name as string) ?? '',

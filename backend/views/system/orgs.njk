@@ -1,18 +1,14 @@
 {% extends "layout.njk" %}
 {% block title %}System — Organisations{% endblock %}
 {% block body %}
-<div class="app-layout">
-  <header class="app-header">
-    <span class="app-header-logo">E4E Roster</span>
-    <span class="text-muted" style="font-size:.85rem">⚙ System Admin</span>
-    <nav class="app-header-nav" style="margin-left:auto">
-      <a href="/system/orgs" class="active">Orgs</a>
-      <a href="/system/admin-groups">Admin Groups</a>
-      <a href="/admin/users">Users</a>
-      <a href="/dashboard">← Dashboard</a>
-    </nav>
-  </header>
-  <main class="app-main">
+<div class="section-strip">
+  <div class="section-strip-inner">
+    <span class="section-label">⚙ System</span>
+    <a href="/system/orgs" class="active">Orgs</a>
+    <a href="/system/admin-groups">Admin Groups</a>
+  </div>
+</div>
+<main class="app-main">
 
     <div class="page-header">
       <h2>Organisations</h2>
@@ -138,6 +134,5 @@
     <p class="text-muted">No organisations yet. Create one above.</p>
     {% endfor %}
 
-  </main>
-</div>
+</main>
 {% endblock %}

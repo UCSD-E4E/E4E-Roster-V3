@@ -1,4 +1,9 @@
 /* E4E Roster — base styles */
+
+:root {
+  --success: #166534;
+}
+
 /* UCSD palette: navy #182B49, gold #C69214 */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -152,6 +157,108 @@ a:hover { text-decoration: underline; }
   font-size: .9rem;
   color: rgba(255,255,255,.7);
 }
+
+/* ── Org switcher ────────────────────────── */
+.nav-orgs {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin-left: 1.25rem;
+}
+
+.nav-dropdown { position: relative; }
+
+.nav-org-chip {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  background: rgba(255,255,255,.12);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: .3rem .65rem;
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nav-org-chip:hover { background: rgba(255,255,255,.22); }
+
+.nav-org-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nav-caret { font-size: .65rem; opacity: .7; }
+
+.nav-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + .5rem);
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0,0,0,.14);
+  min-width: 170px;
+  z-index: 200;
+  overflow: hidden;
+}
+
+.nav-dropdown-menu a {
+  display: block;
+  padding: .55rem 1rem;
+  font-size: .88rem;
+  color: var(--text);
+}
+.nav-dropdown-menu a:hover { background: var(--bg); text-decoration: none; }
+
+.nav-dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: .2rem 0;
+}
+
+.nav-dropdown:hover .nav-dropdown-menu,
+.nav-dropdown:focus-within .nav-dropdown-menu { display: block; }
+
+/* ── Section strip (per-section tabs) ────── */
+.section-strip {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.section-strip-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.section-label {
+  font-weight: 700;
+  font-size: .88rem;
+  color: var(--navy);
+  padding: .7rem 1.25rem .7rem 0;
+  margin-right: .5rem;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.section-strip a {
+  padding: .7rem .9rem;
+  font-size: .88rem;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  text-decoration: none;
+}
+.section-strip a:hover { color: var(--text); }
+.section-strip a.active { color: var(--navy); border-bottom-color: var(--navy); font-weight: 600; }
 
 .app-main {
   max-width: 1100px;

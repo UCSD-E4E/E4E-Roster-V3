@@ -1,52 +1,32 @@
 {% extends "layout.njk" %}
-
 {% block title %}Dashboard — E4E Roster{% endblock %}
-
 {% block body %}
-<div class="app-layout">
-  <header class="app-header">
-    <div class="app-header-inner">
-      <span class="app-brand">E4E Roster</span>
-      <nav class="app-nav">
-        {% if user.isAdmin %}
-        <a href="/admin/users">Admin</a>
-        {% endif %}
-        {% if user.isProjectLead %}
-        <a href="/pl/projects">Project Lead</a>
-        {% endif %}
-        <span class="nav-user">{{ user.name or user.username }}</span>
-        <form method="POST" action="/logout" style="display:inline">
-          <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
-        </form>
-      </nav>
+<main class="app-main">
+  <h2>Welcome, {{ user.name or user.username }}</h2>
+  <p class="text-muted">{{ user.email }}</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h3>Account Status</h3>
+      <p class="text-muted">Check your account across E4E systems.</p>
+      <a href="/account" class="btn btn-secondary">View Status</a>
     </div>
-  </header>
 
-  <main class="app-main">
-    <h2>Welcome, {{ user.name or user.username }}</h2>
-    <p class="text-muted">{{ user.email }}</p>
-
-    <div class="card-grid">
-      <div class="card">
-        <h3>Account Status</h3>
-        <p class="text-muted">Check your account across E4E systems.</p>
-        <a href="/account" class="btn btn-secondary">View Status</a>
-      </div>
-
-      <div class="card">
-        <h3>Projects</h3>
-        <p class="text-muted">Browse lab projects and your memberships.</p>
-        <a href="/projects" class="btn btn-secondary">View Projects</a>
-      </div>
-
-      {% if user.isAdmin %}
-      <div class="card">
-        <h3>Admin</h3>
-        <p class="text-muted">Manage roster, provision accounts, view audit log.</p>
-        <a href="/admin/users" class="btn btn-secondary">Open Admin</a>
-      </div>
-      {% endif %}
+    {% if user.isAdmin %}
+    <div class="card">
+      <h3>Admin</h3>
+      <p class="text-muted">Manage roster, provision accounts, view audit log.</p>
+      <a href="/admin/users" class="btn btn-secondary">Open Admin</a>
     </div>
-  </main>
-</div>
+    {% endif %}
+
+    {% if user.isSystemAdmin %}
+    <div class="card">
+      <h3>System</h3>
+      <p class="text-muted">Manage organisations, LDAP group mappings, and system admin groups.</p>
+      <a href="/system/orgs" class="btn btn-secondary">System Admin</a>
+    </div>
+    {% endif %}
+  </div>
+</main>
 {% endblock %}

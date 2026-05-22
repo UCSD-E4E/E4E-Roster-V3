@@ -1,27 +1,7 @@
 {% extends "layout.njk" %}
 {% block title %}My Account — E4E Roster{% endblock %}
 {% block body %}
-<div class="app-layout">
-  <header class="app-header">
-    <div class="app-header-inner">
-      <span class="app-brand">E4E Roster</span>
-      <nav class="app-nav">
-        {% if user.isAdmin %}
-        <a href="/admin/users">Admin</a>
-        {% endif %}
-        {% if user.isProjectLead %}
-        <a href="/pl/projects">Project Lead</a>
-        {% endif %}
-        <a href="/dashboard">Dashboard</a>
-        <span class="nav-user">{{ user.name or user.username }}</span>
-        <form method="POST" action="/logout" style="display:inline">
-          <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
-        </form>
-      </nav>
-    </div>
-  </header>
-
-  <main class="app-main">
+<main class="app-main">
     <div class="page-header">
       <h2>My Account</h2>
     </div>
@@ -107,6 +87,5 @@
 
     </div>
     {% endif %}
-  </main>
-</div>
+</main>
 {% endblock %}

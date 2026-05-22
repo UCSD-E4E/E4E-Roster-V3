@@ -46,6 +46,11 @@ export function createApp(): express.Application {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  app.use((req, res, next) => {
+    res.locals.currentUser = req.user ?? null;
+    next();
+  });
+
   app.get('/', (req, res) => {
     res.redirect(req.isAuthenticated() ? '/dashboard' : '/login');
   });

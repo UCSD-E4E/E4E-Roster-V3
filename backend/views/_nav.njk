@@ -1,0 +1,44 @@
+<header class="app-header">
+  <div class="app-header-inner">
+
+    <a href="/dashboard" class="app-brand">E4E Roster</a>
+
+    {% if currentUser and currentUser.orgRoles and currentUser.orgRoles.length %}
+    <div class="nav-orgs">
+      {% for orgRole in currentUser.orgRoles %}
+      <div class="nav-dropdown">
+        <button class="nav-org-chip" type="button">
+          {% if orgRole.themeColor %}
+          <span class="nav-org-dot" style="background:{{ orgRole.themeColor }}"></span>
+          {% endif %}
+          {{ orgRole.orgName }} <span class="nav-caret">▾</span>
+        </button>
+        <div class="nav-dropdown-menu">
+          <a href="/orgs/{{ orgRole.orgSlug }}">Projects</a>
+          {% if orgRole.role === 'org_admin' or currentUser.isSystemAdmin %}
+          <div class="nav-dropdown-divider"></div>
+          <a href="/orgs/{{ orgRole.orgSlug }}/admin">Org Admin</a>
+          <a href="/orgs/{{ orgRole.orgSlug }}/admin/members">Members</a>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <nav class="app-nav">
+      {% if currentUser and currentUser.isSystemAdmin %}
+      <a href="/system/orgs">System</a>
+      {% endif %}
+      {% if currentUser and currentUser.isAdmin %}
+      <a href="/admin/users">Admin</a>
+      {% endif %}
+      <a href="/dashboard">Dashboard</a>
+      <a href="/account" class="nav-user">{{ currentUser.name or currentUser.username }}</a>
+      <form method="POST" action="/logout" style="display:inline">
+        <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
+      </form>
+    </nav>
+
+  </div>
+</header>

@@ -1,16 +1,13 @@
 {% extends "layout.njk" %}
 {% block title %}Add Existing Member — {{ org.name }}{% endblock %}
 {% block body %}
-<div class="app-layout">
-  <header class="app-header" {% if org.theme_color %}style="border-bottom: 3px solid {{ org.theme_color }}"{% endif %}>
-    <span class="app-header-logo">{{ org.name }}</span>
-    <span class="text-muted" style="font-size:.85rem">Org Admin</span>
-    <nav class="app-header-nav" style="margin-left:auto">
-      <a href="/orgs/{{ org.slug }}/admin">Projects</a>
-      <a href="/orgs/{{ org.slug }}/admin/members" class="active">Members</a>
-      <a href="/orgs/{{ org.slug }}">← Org</a>
-    </nav>
-  </header>
+<div class="section-strip" {% if org.theme_color %}style="border-top:3px solid {{ org.theme_color }}"{% endif %}>
+  <div class="section-strip-inner">
+    <span class="section-label">{{ org.name }}</span>
+    <a href="/orgs/{{ org.slug }}/admin">Projects</a>
+    <a href="/orgs/{{ org.slug }}/admin/members" class="active">Members</a>
+  </div>
+</div>
   <main class="app-main">
 
     <div class="page-header">
@@ -79,5 +76,4 @@
 
     </div>
   </main>
-</div>
 {% endblock %}

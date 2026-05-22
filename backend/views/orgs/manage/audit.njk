@@ -1,14 +1,6 @@
 {% extends "layout.njk" %}
 {% block title %}Audit Log — {{ user.username }} — {{ project.name }}{% endblock %}
 {% block body %}
-<div class="app-layout">
-  <header class="app-header" {% if org.theme_color %}style="border-bottom: 3px solid {{ org.theme_color }}"{% endif %}>
-    <span class="app-header-logo">{{ org.name }}</span>
-    <nav class="app-header-nav" style="margin-left:auto">
-      <a href="/orgs/{{ org.slug }}">← Projects</a>
-      <a href="/dashboard">Dashboard</a>
-    </nav>
-  </header>
   <main class="app-main">
 
     <div class="page-header">
@@ -49,5 +41,4 @@
     {% endif %}
 
   </main>
-</div>
 {% endblock %}
