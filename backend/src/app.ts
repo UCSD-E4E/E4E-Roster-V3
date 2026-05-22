@@ -8,7 +8,6 @@ import authRouter from './routes/auth';
 import dashboardRouter from './routes/dashboard';
 import accountRouter from './routes/account';
 import adminRouter from './routes/admin/index';
-import plRouter from './routes/pl/index';
 import systemRouter from './routes/system/index';
 import orgsRouter from './routes/orgs/index';
 import debugRouter from './routes/admin/debug'; // TEMPORARY — see /DEBUG_CHANGES.md
@@ -58,7 +57,7 @@ export function createApp(): express.Application {
   app.use('/system', systemRouter);
   app.use('/debug', debugRouter); // TEMPORARY — see /DEBUG_CHANGES.md
   app.use('/orgs/:orgSlug', orgsRouter);
-  app.use('/pl', plRouter);
+
 
   return app;
 }

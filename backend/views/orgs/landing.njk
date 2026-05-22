@@ -24,6 +24,11 @@
       <div class="card">
         <h3>{{ project.name }}</h3>
         {% if project.description %}<p class="text-muted">{{ project.description }}</p>{% endif %}
+        {% if project.id in manageableIds %}
+        <div style="margin-top:auto;padding-top:.75rem">
+          <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage" class="btn btn-primary btn-sm">Manage Members</a>
+        </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>

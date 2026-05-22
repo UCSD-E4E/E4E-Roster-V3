@@ -2,17 +2,25 @@
 {% block title %}Add Existing Member — {{ project.name }}{% endblock %}
 {% block body %}
 <div class="app-layout">
-  {% include "pl/_header.njk" %}
+  <header class="app-header" {% if org.theme_color %}style="border-bottom: 3px solid {{ org.theme_color }}"{% endif %}>
+    <span class="app-header-logo">{{ org.name }}</span>
+    <nav class="app-header-nav" style="margin-left:auto">
+      <a href="/orgs/{{ org.slug }}">← Projects</a>
+      <a href="/dashboard">Dashboard</a>
+    </nav>
+  </header>
   <main class="app-main">
 
     <div class="page-header">
-      <h2>Add Existing Member to {{ project.name }}</h2>
+      <div>
+        <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage" style="font-size:.85rem;color:var(--text-muted)">← {{ project.name }}</a>
+        <h2 style="margin:.25rem 0 0">Add Existing Member</h2>
+      </div>
     </div>
 
     <div class="card" style="max-width:640px">
 
-      {# Search form #}
-      <form method="GET" action="/pl/projects/{{ project.id }}/users/add">
+      <form method="GET" action="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage/add">
         <div class="form-group">
           <label for="q">Find by username or email</label>
           <div class="form-row" style="align-items:flex-end;gap:.5rem">
@@ -27,7 +35,6 @@
       <div class="alert alert-error" style="margin-top:1rem">{{ error }}</div>
       {% endif %}
 
-      {# Result #}
       {% if query and not found and not error %}
       <p class="text-muted" style="margin-top:1rem">No user found for <strong>{{ query }}</strong>.</p>
       {% endif %}
@@ -37,7 +44,7 @@
       <h3>{{ found.first_name }} {{ found.last_name }} <code style="font-size:.85rem">{{ found.username }}</code></h3>
       <p class="text-muted" style="margin-bottom:1rem">{{ found.email }} &mdash; {{ found.role or 'no role' }}</p>
 
-      <form method="POST" action="/pl/projects/{{ project.id }}/users/add">
+      <form method="POST" action="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage/add">
         <input type="hidden" name="username" value="{{ found.username }}">
 
         <div class="form-group">
@@ -59,14 +66,14 @@
 
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Add to Project</button>
-          <a href="/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Cancel</a>
+          <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage" class="btn btn-ghost">Cancel</a>
         </div>
       </form>
       {% endif %}
 
       {% if not query %}
       <div class="form-actions" style="margin-top:1.5rem">
-        <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-ghost">Create a new user instead →</a>
+        <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage/new" class="btn btn-ghost">Create a new user instead →</a>
       </div>
       {% endif %}
 

@@ -2,12 +2,18 @@
 {% block title %}Edit {{ user.username }} — {{ project.name }}{% endblock %}
 {% block body %}
 <div class="app-layout">
-  {% include "pl/_header.njk" %}
+  <header class="app-header" {% if org.theme_color %}style="border-bottom: 3px solid {{ org.theme_color }}"{% endif %}>
+    <span class="app-header-logo">{{ org.name }}</span>
+    <nav class="app-header-nav" style="margin-left:auto">
+      <a href="/orgs/{{ org.slug }}">← Projects</a>
+      <a href="/dashboard">Dashboard</a>
+    </nav>
+  </header>
   <main class="app-main">
 
     <div class="page-header">
       <div>
-        <a href="/pl/projects/{{ project.id }}/users" style="font-size:.85rem;color:var(--text-muted)">&larr; {{ project.name }}</a>
+        <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage" style="font-size:.85rem;color:var(--text-muted)">← {{ project.name }}</a>
         <h2 style="margin:.25rem 0 0">{{ user.first_name }} {{ user.last_name }}</h2>
         <p class="text-muted" style="margin:0;font-size:.9rem"><code>{{ user.username }}</code> &middot; {{ user.email }}</p>
       </div>
@@ -18,14 +24,9 @@
     {% endif %}
 
     <div style="max-width:600px">
-      <form method="POST" action="/pl/projects/{{ project.id }}/users/{{ user.username }}/edit">
+      <form method="POST" action="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage/{{ user.username }}/edit">
         <div class="card">
           <h4 style="margin-top:0">Account Details</h4>
-
-          <div style="margin-bottom:1rem">
-            <label class="form-label">Expiry Date <span class="text-muted">(leave blank for no expiry)</span></label>
-            <input type="date" name="expiryDate" class="form-input" value="{{ user.expiry_date or '' }}">
-          </div>
 
           <div style="margin-bottom:1rem">
             <label class="form-label">Long-term email <span class="text-muted" style="font-size:.8rem">(personal, persists after graduation)</span></label>
@@ -89,7 +90,7 @@
 
         <div style="margin-top:1rem;display:flex;gap:.5rem">
           <button class="btn btn-primary" type="submit">Save Changes</button>
-          <a href="/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Cancel</a>
+          <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage" class="btn btn-ghost">Cancel</a>
         </div>
       </form>
     </div>

@@ -197,6 +197,14 @@ export async function getUserOrgs(username: string): Promise<UserOrgRow[]> {
   return rows;
 }
 
+export async function getProjectGroups(projectId: number): Promise<string[]> {
+  const { rows } = await db.query<{ ldap_group: string }>(
+    `SELECT ldap_group FROM project_ldap_groups WHERE project_id = $1 ORDER BY ldap_group`,
+    [projectId],
+  );
+  return rows.map(r => r.ldap_group);
+}
+
 export async function upsertOrgGroupMapping(orgId: number, ldapGroup: string, role: string): Promise<void> {
   await db.query(
     `INSERT INTO org_ldap_group_mappings (org_id, ldap_group, role)

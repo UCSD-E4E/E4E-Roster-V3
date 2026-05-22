@@ -1,17 +1,23 @@
 {% extends "layout.njk" %}
-{% block title %}{{ project.name }} Members{% endblock %}
+{% block title %}{{ project.name }} — Members{% endblock %}
 {% block body %}
 <div class="app-layout">
-  {% include "pl/_header.njk" %}
+  <header class="app-header" {% if org.theme_color %}style="border-bottom: 3px solid {{ org.theme_color }}"{% endif %}>
+    <span class="app-header-logo">{{ org.name }}</span>
+    <nav class="app-header-nav" style="margin-left:auto">
+      <a href="/orgs/{{ org.slug }}">← Projects</a>
+      <a href="/dashboard">Dashboard</a>
+    </nav>
+  </header>
   <main class="app-main">
 
     <div class="page-header">
       <div>
-        <a href="/pl/projects" style="font-size:.85rem;color:var(--text-muted)">&larr; My Projects</a>
+        <a href="/orgs/{{ org.slug }}" style="font-size:.85rem;color:var(--text-muted)">← {{ org.name }}</a>
         <h2 style="margin:.25rem 0 0">{{ project.name }}</h2>
       </div>
-      <a href="/pl/projects/{{ project.id }}/users/add" class="btn btn-secondary">+ Add Existing</a>
-      <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-primary">+ New Member</a>
+      <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage/add" class="btn btn-secondary">+ Add Existing</a>
+      <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage/new" class="btn btn-primary">+ New Member</a>
     </div>
 
     {% if warning %}
@@ -47,8 +53,8 @@
               {% else %}<span style="color:var(--success)">Active</span>{% endif %}
             </td>
             <td style="display:flex;gap:.25rem">
-              <a href="/pl/projects/{{ project.id }}/users/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit</a>
-              <a href="/pl/projects/{{ project.id }}/users/{{ u.username }}/audit" class="btn btn-ghost btn-sm">Log</a>
+              <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit</a>
+              <a href="/orgs/{{ org.slug }}/projects/{{ project.id }}/manage/{{ u.username }}/audit" class="btn btn-ghost btn-sm">Log</a>
             </td>
           </tr>
           {% endfor %}

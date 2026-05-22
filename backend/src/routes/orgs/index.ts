@@ -6,6 +6,7 @@ import * as ldap from '../../services/ldap';
 import { generateUsername } from '../../services/ldap';
 import { NewUser } from '../../services/types';
 import { ninetyDaysFromNow, triggerGithubInvite } from '../../utils/provisioning';
+import manageRouter from './manage';
 
 const router = Router({ mergeParams: true });
 
@@ -28,8 +29,31 @@ router.get('/', requireOrgMember, async (req: Request, res: Response) => {
     `SELECT id, name, description FROM projects WHERE org_id = $1 ORDER BY name`,
     [org.id],
   );
-  res.render('orgs/landing', { org, projects, user: req.user });
+
+  let manageableIds: number[];
+  const orgRole = req.user?.orgRoles?.find(r => r.orgSlug === org.slug);
+  if (req.user?.isSystemAdmin || orgRole?.role === 'org_admin') {
+    manageableIds = projects.map((p: { id: number }) => p.id);
+  } else {
+    const userGroups = req.user?.groups ?? [];
+    if (userGroups.length && projects.length) {
+      const { rows } = await db.query<{ project_id: number }>(
+        `SELECT DISTINCT project_id FROM project_ldap_groups
+         WHERE project_id = ANY($1) AND ldap_group = ANY($2)`,
+        [projects.map((p: { id: number }) => p.id), userGroups],
+      );
+      manageableIds = rows.map(r => r.project_id);
+    } else {
+      manageableIds = [];
+    }
+  }
+
+  res.render('orgs/landing', { org, projects, manageableIds, user: req.user });
 });
+
+// ── Project member management (PL portal) ─────────────────────────
+
+router.use('/projects/:projectId/manage', manageRouter);
 
 // ── Admin: overview ───────────────────────────────────────────────
 
