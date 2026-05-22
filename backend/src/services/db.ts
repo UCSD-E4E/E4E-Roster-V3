@@ -197,6 +197,22 @@ export async function getUserOrgs(username: string): Promise<UserOrgRow[]> {
   return rows;
 }
 
+export async function upsertOrgGroupMapping(orgId: number, ldapGroup: string, role: string): Promise<void> {
+  await db.query(
+    `INSERT INTO org_ldap_group_mappings (org_id, ldap_group, role)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (org_id, ldap_group) DO UPDATE SET role = EXCLUDED.role`,
+    [orgId, ldapGroup, role],
+  );
+}
+
+export async function removeOrgGroupMapping(orgId: number, ldapGroup: string): Promise<void> {
+  await db.query(
+    `DELETE FROM org_ldap_group_mappings WHERE org_id = $1 AND ldap_group = $2`,
+    [orgId, ldapGroup],
+  );
+}
+
 export async function upsertUserOrg(username: string, orgId: number, role: string): Promise<void> {
   await db.query(
     `INSERT INTO user_orgs (username, org_id, role)

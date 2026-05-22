@@ -8,6 +8,7 @@ import { db } from '../../services/db';
 import * as ldap from '../../services/ldap';
 import { generateUsername } from '../../services/ldap';
 import { NewUser } from '../../services/types';
+import { ninetyDaysFromNow, triggerGithubInvite } from '../../utils/provisioning';
 
 const router = Router({ mergeParams: true });
 
@@ -52,21 +53,6 @@ async function projectGroups(projectId: number): Promise<string[]> {
     [projectId],
   );
   return rows.map((r) => r.ldap_group);
-}
-
-function ninetyDaysFromNow(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 90);
-  return d.toISOString().slice(0, 10);
-}
-
-function triggerGithubInvite(githubUsername: string): void {
-  const base = process.env.GITHUB_APP_URL ?? 'http://github-app:3001';
-  fetch(`${base}/invite`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ githubUsername }),
-  }).catch((err) => console.warn(`[pl] GitHub invite trigger failed for ${githubUsername}:`, err));
 }
 
 // ── User list ─────────────────────────────────────────────────────
