@@ -11,14 +11,19 @@ const router = Router();
 
 // ── User list ─────────────────────────────────────────────────────
 router.get('/', async (_req: Request, res: Response) => {
+  const orgId = res.locals.currentOrg?.id;
   const { rows: users } = await db.query(
-    `SELECT username, first_name, last_name, email, role,
-            TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
-            disabled, ldap_groups, github_username, slack_username, last_synced_at
-     FROM users
-     ORDER BY last_name, first_name`,
+    `SELECT u.username, u.first_name, u.last_name, u.email, u.role,
+            TO_CHAR(u.expiry_date, 'YYYY-MM-DD') AS expiry_date,
+            u.disabled, u.ldap_groups, u.github_username, u.slack_username, u.last_synced_at
+     FROM users u
+     JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $1
+     ORDER BY u.last_name, u.first_name`,
+    [orgId],
   );
-  const { rows: [{ count }] } = await db.query('SELECT COUNT(*) FROM users');
+  const { rows: [{ count }] } = await db.query(
+    'SELECT COUNT(*) FROM user_orgs WHERE org_id = $1', [orgId],
+  );
   res.render('admin/users/index', { users, totalCount: count });
 });
 

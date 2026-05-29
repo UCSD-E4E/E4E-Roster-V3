@@ -6,8 +6,13 @@ const router = Router();
 // requireOrgAdmin applied at admin/index.ts level
 
 router.get('/', async (req: Request, res: Response) => {
+  const orgId = res.locals.currentOrg?.id;
   const { rows: groupRows } = await db.query<{ grp: string }>(
-    'SELECT DISTINCT unnest(ldap_groups) AS grp FROM users ORDER BY grp',
+    `SELECT DISTINCT unnest(u.ldap_groups) AS grp
+     FROM users u
+     JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $1
+     ORDER BY grp`,
+    [orgId],
   );
   const groups = groupRows.map((r) => r.grp);
   const selectedGroup = (req.query.group as string) || null;
