@@ -74,9 +74,7 @@ export function createApp(): express.Application {
     if (!req.isAuthenticated() || !req.user) return res.redirect('/login');
     const { user } = req;
     if (user.isSystemAdmin || user.isLocalAdmin) {
-      return user.orgs.length > 0
-        ? res.redirect(`/orgs/${user.orgs[0].orgSlug}`)
-        : res.redirect('/system');
+      return res.redirect(user.orgs.length > 0 ? '/orgs' : '/system');
     }
     if (user.orgs.length === 1) return res.redirect(`/orgs/${user.orgs[0].orgSlug}`);
     return res.redirect('/orgs');
