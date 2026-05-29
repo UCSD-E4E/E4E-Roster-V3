@@ -228,7 +228,7 @@ router.post('/groups', async (req: Request, res: Response) => {
     );
   }
 
-  res.redirect('/system/users');
+  res.redirect('/system/orgs');
 });
 
 // ── Local admin management ────────────────────────────────────────────────────

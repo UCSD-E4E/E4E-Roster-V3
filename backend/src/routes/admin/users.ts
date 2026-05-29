@@ -139,6 +139,17 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
 
   if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined);
 
+  await db.query(
+    `INSERT INTO audit_log (actor, action, target_username, details, org_id)
+     VALUES ($1, 'edit_user', $2, $3, $4)`,
+    [
+      req.user?.username ?? 'admin',
+      username,
+      JSON.stringify({ role, expiryDate, groups: mergedGroups, githubUsername: cleanGithub, slackUsername: cleanSlack }),
+      res.locals.currentOrg?.id ?? null,
+    ],
+  );
+
   res.redirect(res.locals.orgBase + '/admin/users');
 });
 
@@ -186,6 +197,12 @@ router.post('/add', async (req: Request, res: Response) => {
      VALUES ($1, $2, $3)
      ON CONFLICT (username, org_id) DO UPDATE SET role = EXCLUDED.role`,
     [username, orgId, role],
+  );
+
+  await db.query(
+    `INSERT INTO audit_log (actor, action, target_username, details, org_id)
+     VALUES ($1, 'add_user_to_org', $2, $3, $4)`,
+    [req.user?.username ?? 'admin', username, JSON.stringify({ role }), orgId],
   );
 
   res.redirect(res.locals.orgBase + '/admin/users');

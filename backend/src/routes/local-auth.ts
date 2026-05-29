@@ -74,7 +74,7 @@ router.post('/local-login', localLoginLimiter, async (req: Request, res: Respons
 });
 
 router.post('/local-logout', (req: Request, res: Response) => {
-  req.logout(() => res.redirect('/login'));
+  req.logout(() => req.session.destroy(() => res.redirect('/login')));
 });
 
 export default router;
