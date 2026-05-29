@@ -40,6 +40,7 @@ router.get('/:id', async (req: Request, res: Response) => {
     [req.params.id],
   );
   const allGroups = await listGroups().catch(() => []);
+
   const mapped = mappedGroups.map((r) => r.ldap_group);
   res.render('admin/projects/detail', { project, mapped, allGroups });
 });
