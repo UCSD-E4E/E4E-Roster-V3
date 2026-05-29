@@ -58,10 +58,12 @@ router.get('/:username/edit', async (req: Request, res: Response) => {
   );
   if (!rows.length) return res.status(404).send('User not found');
 
-  const [allGroups, ldapUser] = await Promise.all([
-    ldap.listGroups().catch(() => []),
+  const orgId = res.locals.currentOrg?.id;
+  const [{ rows: orgGroupRows }, ldapUser] = await Promise.all([
+    db.query<{ ldap_group: string }>('SELECT ldap_group FROM org_groups WHERE org_id = $1 ORDER BY ldap_group', [orgId]),
     ldap.getUser(username).catch(() => null),
   ]);
+  const allGroups = orgGroupRows.map(r => r.ldap_group);
 
   res.render('admin/users/edit-user', {
     user: rows[0],
@@ -74,11 +76,23 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
   const { role, expiryDate, githubUsername, slackUsername, secondaryEmail, phone, sshKeys } =
     req.body as Record<string, string>;
-  const selectedGroups: string[] = [req.body.groups ?? []].flat();
+  const selectedOrgGroups: string[] = [req.body.groups ?? []].flat();
   const sshPublicKeys = (sshKeys || '').split('\n').map((k: string) => k.trim()).filter(Boolean);
 
+  // Fetch current user groups and org group list in parallel
+  const orgId = res.locals.currentOrg?.id;
+  const [{ rows: currentRows }, { rows: orgGroupRows }] = await Promise.all([
+    db.query<{ ldap_groups: string[] }>('SELECT ldap_groups FROM users WHERE username = $1', [username]),
+    db.query<{ ldap_group: string }>('SELECT ldap_group FROM org_groups WHERE org_id = $1', [orgId]),
+  ]);
+
+  const orgGroupSet = new Set(orgGroupRows.map(r => r.ldap_group));
+  // Preserve groups that don't belong to this org, merge with the org selections
+  const nonOrgGroups = (currentRows[0]?.ldap_groups ?? []).filter(g => !orgGroupSet.has(g));
+  const mergedGroups = [...new Set([...nonOrgGroups, ...selectedOrgGroups])];
+
   const [groupResult, expiryResult, sshResult] = await Promise.all([
-    ldap.updateUserGroups(username, selectedGroups),
+    ldap.updateUserGroups(username, mergedGroups),
     ldap.updateUserExpiry(username, expiryDate || null),
     ldap.setSshKeys(username, sshPublicKeys),
   ]);
@@ -94,7 +108,7 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
        FROM users WHERE username = $1`,
       [username],
     );
-    const allGroups = await ldap.listGroups().catch(() => []);
+    const allGroups = orgGroupRows.map(r => r.ldap_group);
     return res.render('admin/users/edit-user', {
       user: rows[0],
       allGroups,
@@ -119,7 +133,7 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
        phone           = $7,
        updated_at      = NOW()
      WHERE username = $8`,
-    [role || null, expiryDate || null, selectedGroups, cleanGithub, cleanSlack,
+    [role || null, expiryDate || null, mergedGroups, cleanGithub, cleanSlack,
      cleanSecondary, cleanPhone, username],
   );
 
