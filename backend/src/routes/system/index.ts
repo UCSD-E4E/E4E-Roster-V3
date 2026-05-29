@@ -326,6 +326,10 @@ router.post('/orgs/:id/ldap-mappings', async (req: Request, res: Response) => {
      VALUES ($1, $2, $3) ON CONFLICT (org_id, ldap_group) DO UPDATE SET role = EXCLUDED.role`,
     [orgId, ldapGroup.trim(), role],
   );
+  await db.query(
+    'INSERT INTO org_groups (org_id, ldap_group) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+    [orgId, ldapGroup.trim()],
+  );
   res.redirect(`/system/orgs/${orgId}/ldap-mappings`);
 });
 

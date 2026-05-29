@@ -155,6 +155,24 @@ export async function runMigrations(): Promise<void> {
     await client.query(`ALTER TABLE group_mappings ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES orgs(id)`);
     await client.query(`ALTER TABLE audit_log      ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES orgs(id)`);
 
+    // ── Explicit LDAP group → org ownership ──────────────────────────────
+    // Tracks which groups are visible/manageable within an org's admin panel.
+    // Populated when an org admin creates a group, or a system admin assigns one.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS org_groups (
+        org_id     INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+        ldap_group VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (org_id, ldap_group)
+      )
+    `);
+    // Back-fill: any group already referenced in org_ldap_group_mappings belongs to that org
+    await client.query(`
+      INSERT INTO org_groups (org_id, ldap_group)
+      SELECT org_id, ldap_group FROM org_ldap_group_mappings
+      ON CONFLICT DO NOTHING
+    `);
+
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

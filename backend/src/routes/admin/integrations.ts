@@ -8,10 +8,7 @@ const router = Router();
 router.get('/', async (req: Request, res: Response) => {
   const orgId = res.locals.currentOrg?.id;
   const { rows: groupRows } = await db.query<{ grp: string }>(
-    `SELECT DISTINCT unnest(u.ldap_groups) AS grp
-     FROM users u
-     JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $1
-     ORDER BY grp`,
+    `SELECT ldap_group AS grp FROM org_groups WHERE org_id = $1 ORDER BY ldap_group`,
     [orgId],
   );
   const groups = groupRows.map((r) => r.grp);

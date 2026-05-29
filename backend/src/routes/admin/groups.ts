@@ -45,6 +45,13 @@ router.post('/', async (req: Request, res: Response) => {
     [actor, 'create_ldap_group', JSON.stringify({ groupName: name, alreadyExisted: result.status === 'already_exists' }), orgId],
   );
 
+  if (orgId) {
+    await db.query(
+      'INSERT INTO org_groups (org_id, ldap_group) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [orgId, name],
+    );
+  }
+
   if (projectId) {
     await db.query(
       'INSERT INTO project_ldap_groups (project_id, ldap_group) VALUES ($1, $2) ON CONFLICT DO NOTHING',
