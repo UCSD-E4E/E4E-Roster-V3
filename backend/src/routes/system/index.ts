@@ -169,9 +169,19 @@ router.get('/groups/new', async (_req: Request, res: Response) => {
   const { rows: projects } = await db.query<{ id: number; name: string }>(
     'SELECT id, name FROM projects ORDER BY name',
   );
+  async function fetchJSON(url: string, timeoutMs = 2000): Promise<unknown> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const r = await fetch(url, { signal: controller.signal });
+      return await r.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   const [teamsRes, channelsRes] = await Promise.allSettled([
-    fetch(`${process.env.GITHUB_APP_URL ?? 'http://github-app:3001'}/teams`).then(r => r.json()),
-    fetch(`${process.env.SLACK_BOT_URL  ?? 'http://slackbot:3002'}/channels`).then(r => r.json()),
+    fetchJSON(`${process.env.GITHUB_APP_URL ?? 'http://github-app:3001'}/teams`),
+    fetchJSON(`${process.env.SLACK_BOT_URL  ?? 'http://slackbot:3002'}/channels`),
   ]);
   res.render('system/groups/new', {
     projects,
