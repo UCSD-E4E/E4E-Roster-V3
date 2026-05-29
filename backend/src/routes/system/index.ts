@@ -273,7 +273,7 @@ router.post('/local-admins', async (req: Request, res: Response) => {
 
 router.get('/orgs', async (req: Request, res: Response) => {
   const { rows: orgs } = await db.query(`
-    SELECT o.id, o.slug, o.name, o.description,
+    SELECT o.id, o.slug, o.name, o.description, o.theme_color,
            COUNT(uo.username)::text AS member_count
     FROM orgs o
     LEFT JOIN user_orgs uo ON uo.org_id = o.id
