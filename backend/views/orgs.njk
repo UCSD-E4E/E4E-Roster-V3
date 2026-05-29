@@ -11,7 +11,8 @@
     <div style="display:flex;flex-direction:column;gap:.75rem;margin-top:1rem">
       {% for org in orgs %}
       <a href="/orgs/{{ org.orgSlug }}/dashboard" class="btn btn-secondary btn-full"
-         style="text-align:left;display:flex;justify-content:space-between;align-items:center">
+         style="text-align:left;display:flex;justify-content:space-between;align-items:center;
+                {% if org.theme_color %}border-left:4px solid {{ org.theme_color }};{% endif %}">
         <span>{{ org.orgName }}</span>
         <span style="font-size:.8rem;opacity:.7">{{ org.role | replace('_', ' ') }}</span>
       </a>
