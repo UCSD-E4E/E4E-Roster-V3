@@ -14,12 +14,20 @@ router.get('/login', (req: Request, res: Response) => {
 });
 
 // Initiates the OIDC redirect to Authentik
-router.get('/auth/login', passport.authenticate('oidc'));
+router.get('/auth/login', (req: Request, _res: Response, next: NextFunction) => {
+  console.log('[auth/login] sessionID:', req.sessionID, '| secure:', req.secure, '| proto:', req.protocol, '| x-fwd-proto:', req.headers['x-forwarded-proto']);
+  next();
+}, passport.authenticate('oidc'));
 
 // Authentik redirects back here after the user authenticates.
 // Session is regenerated after successful auth to prevent session fixation.
 router.get(
   '/auth/callback',
+  (req: Request, _res: Response, next: NextFunction) => {
+    const oidcKey = Object.keys(req.session).find(k => k.startsWith('oidc:'));
+    console.log('[auth/callback] sessionID:', req.sessionID, '| oidcKey:', oidcKey ?? 'MISSING', '| sessionKeys:', Object.keys(req.session));
+    next();
+  },
   passport.authenticate('oidc', { failureRedirect: '/login?error=1' }),
   (req: Request, res: Response, next: NextFunction) => {
     const user = req.user as AuthUser;
