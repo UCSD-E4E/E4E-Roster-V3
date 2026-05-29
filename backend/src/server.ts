@@ -64,14 +64,11 @@ async function bootstrap(): Promise<void> {
   }
 
   await runMigrations();
-<<<<<<< HEAD
   await bootstrapLocalAdmin();
   // Ensure custom LDAP extended attributes exist before first sync
   await ensureExtendedAttributes().catch((err) =>
     console.warn('[startup] ensureExtendedAttributes failed (non-fatal):', err),
   );
-=======
->>>>>>> main
   startSyncSchedule();
 
   const app = createApp();

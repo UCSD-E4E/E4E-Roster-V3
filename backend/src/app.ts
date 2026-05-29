@@ -16,11 +16,7 @@ import dashboardRouter from './routes/dashboard';
 import accountRouter from './routes/account';
 import adminRouter from './routes/admin/index';
 import plRouter from './routes/pl/index';
-<<<<<<< HEAD
 import systemRouter from './routes/system/index';
-=======
-import debugRouter from './routes/admin/debug'; // TEMPORARY — see /DEBUG_CHANGES.md
->>>>>>> main
 
 export function createApp(): express.Application {
   const app = express();
@@ -69,7 +65,6 @@ export function createApp(): express.Application {
 
   // ── Public auth routes ────────────────────────────────────────────
   app.use('/', authRouter);
-<<<<<<< HEAD
   app.use('/', localAuthRouter);
 
   // ── Root: redirect to primary org or org selector ─────────────────
@@ -119,13 +114,6 @@ export function createApp(): express.Application {
     if (res.headersSent) return;
     res.status(500).send('Internal server error');
   });
-=======
-  app.use('/dashboard', dashboardRouter);
-  app.use('/account', accountRouter);
-  app.use('/admin', adminRouter);
-  app.use('/debug', debugRouter); // TEMPORARY — see /DEBUG_CHANGES.md
-  app.use('/pl', plRouter);
->>>>>>> main
 
   return app;
 }
