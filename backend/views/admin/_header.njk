@@ -1,9 +1,9 @@
 <header class="app-header">
   <div class="app-header-inner">
-    <span class="app-brand">
+    <a href="/orgs" class="app-brand">
       {{ currentOrg.name if currentOrg else 'Roster' }}
       <span class="badge-admin">Admin</span>
-    </span>
+    </a>
     {% if user and user.orgs and user.orgs.length > 1 %}
     <span class="org-switcher">
       <a href="/orgs" class="org-switcher-link">Switch org</a>
