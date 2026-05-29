@@ -4,6 +4,9 @@
     <nav class="app-nav">
       <a href="/system/orgs">Organizations</a>
       <a href="/system/local-admins">Local Admins</a>
+      {% if user.orgs.length %}
+        <a href="/orgs">My Orgs</a>
+      {% endif %}
       <span class="nav-user">{{ user.name or user.username }}</span>
       <form method="POST" action="/logout" style="display:inline">
         <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>

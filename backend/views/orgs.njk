@@ -9,8 +9,8 @@
     </div>
 
     <div style="display:flex;flex-direction:column;gap:.75rem;margin-top:1rem">
-      {% for org in user.orgs %}
-      <a href="/org/{{ org.orgSlug }}/dashboard" class="btn btn-secondary btn-full"
+      {% for org in orgs %}
+      <a href="/orgs/{{ org.orgSlug }}/dashboard" class="btn btn-secondary btn-full"
          style="text-align:left;display:flex;justify-content:space-between;align-items:center">
         <span>{{ org.orgName }}</span>
         <span style="font-size:.8rem;opacity:.7">{{ org.role | replace('_', ' ') }}</span>
