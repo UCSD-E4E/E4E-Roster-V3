@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}E4E Roster{% endblock %}</title>
+  <title>{% block title %}Roster{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/main.css">
+  {% if orgPrimary %}<style>:root{--primary:{{ orgPrimary }};}</style>{% endif %}
 </head>
 <body>
   {% block body %}{% endblock %}

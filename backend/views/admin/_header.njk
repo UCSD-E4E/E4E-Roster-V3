@@ -1,12 +1,24 @@
 <header class="app-header">
   <div class="app-header-inner">
-    <span class="app-brand">E4E Roster <span class="badge-admin">Admin</span></span>
+    <span class="app-brand">
+      {{ currentOrg.name if currentOrg else 'Roster' }}
+      <span class="badge-admin">Admin</span>
+    </span>
+    {% if user and user.orgs and user.orgs.length > 1 %}
+    <span class="org-switcher">
+      <a href="/orgs" class="org-switcher-link">Switch org</a>
+    </span>
+    {% endif %}
     <nav class="app-nav">
-      <a href="/admin/users">Users</a>
-      <a href="/admin/projects">Projects</a>
-      <a href="/admin/groups/new">New Group</a>
-      <a href="/admin/integrations">Integrations</a>
-      <a href="/dashboard">My Dashboard</a>
+      <a href="{{ orgBase }}/admin/users">Users</a>
+      <a href="{{ orgBase }}/admin/projects">Projects</a>
+      <a href="{{ orgBase }}/admin/groups/new">New Group</a>
+      <a href="{{ orgBase }}/admin/integrations">Integrations</a>
+      <a href="{{ orgBase }}/admin/settings">Settings</a>
+      {% if user and user.isSystemAdmin %}
+      <a href="/system">System</a>
+      {% endif %}
+      <a href="{{ orgBase }}/dashboard">Dashboard</a>
       <form method="POST" action="/logout" style="display:inline">
         <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
       </form>

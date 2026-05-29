@@ -29,7 +29,7 @@
           <ul style="list-style:none;margin:0;padding:0;max-height:70vh;overflow-y:auto">
             {% for grp in groups %}
             <li>
-              <a href="/admin/integrations?group={{ grp | urlencode }}"
+              <a href="{{ orgBase }}/admin/integrations?group={{ grp | urlencode }}"
                  style="display:block;padding:.5rem 1rem;text-decoration:none;font-size:.9rem;
                         {% if grp == selectedGroup %}background:var(--primary);color:#fff;{% endif %}">
                 {{ grp }}
@@ -60,7 +60,7 @@
 
           {# GitHub teams #}
           <div class="card">
-            <h4 style="margin-top:0;display:flex;align-items:center;gap:.5rem">
+            <h4 style="display:flex;align-items:center;gap:.5rem">
               GitHub Teams
             </h4>
             {% if githubMappings.length %}
@@ -68,7 +68,7 @@
               {% for m in githubMappings %}
               <li style="display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border)">
                 <span><code>{{ m.target_id }}</code> {{ m.target_name }}</span>
-                <form method="POST" action="/admin/integrations/mappings/{{ m.id }}/delete" style="margin:0">
+                <form method="POST" action="{{ orgBase }}/admin/integrations/mappings/{{ m.id }}/delete" style="margin:0">
                   <input type="hidden" name="ldapGroup" value="{{ selectedGroup }}">
                   <button class="btn btn-ghost btn-sm" style="color:var(--danger)">Remove</button>
                 </form>
@@ -78,7 +78,7 @@
             {% else %}
             <p class="text-muted" style="font-size:.875rem">No GitHub teams mapped.</p>
             {% endif %}
-            <form method="POST" action="/admin/integrations/mappings" style="display:flex;gap:.5rem;align-items:center">
+            <form method="POST" action="{{ orgBase }}/admin/integrations/mappings" style="display:flex;gap:.5rem;align-items:center">
               <input type="hidden" name="ldapGroup" value="{{ selectedGroup }}">
               <input type="hidden" name="service" value="github">
               <input type="hidden" name="targetId" id="githubTargetId">
@@ -93,13 +93,13 @@
 
           {# Slack channels #}
           <div class="card">
-            <h4 style="margin-top:0">Slack Channels</h4>
+            <h4>Slack Channels</h4>
             {% if slackMappings.length %}
             <ul style="list-style:none;padding:0;margin:0 0 1rem">
               {% for m in slackMappings %}
               <li style="display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border)">
                 <span><code>{{ m.target_id }}</code> #{{ m.target_name }}</span>
-                <form method="POST" action="/admin/integrations/mappings/{{ m.id }}/delete" style="margin:0">
+                <form method="POST" action="{{ orgBase }}/admin/integrations/mappings/{{ m.id }}/delete" style="margin:0">
                   <input type="hidden" name="ldapGroup" value="{{ selectedGroup }}">
                   <button class="btn btn-ghost btn-sm" style="color:var(--danger)">Remove</button>
                 </form>
@@ -109,7 +109,7 @@
             {% else %}
             <p class="text-muted" style="font-size:.875rem">No Slack channels mapped.</p>
             {% endif %}
-            <form method="POST" action="/admin/integrations/mappings" style="display:flex;gap:.5rem;align-items:center">
+            <form method="POST" action="{{ orgBase }}/admin/integrations/mappings" style="display:flex;gap:.5rem;align-items:center">
               <input type="hidden" name="ldapGroup" value="{{ selectedGroup }}">
               <input type="hidden" name="service" value="slack">
               <input type="hidden" name="targetId" id="slackTargetId">
@@ -160,8 +160,8 @@ async function loadDropdown(url, selectId, labelFn) {
 }
 
 {% if selectedGroup %}
-loadDropdown('/admin/integrations/api/teams',    'githubSelect', t => t.name);
-loadDropdown('/admin/integrations/api/channels', 'slackSelect',  c => c.name);
+loadDropdown('{{ orgBase }}/admin/integrations/api/teams',    'githubSelect', t => t.name);
+loadDropdown('{{ orgBase }}/admin/integrations/api/channels', 'slackSelect',  c => c.name);
 {% endif %}
 
 async function triggerSync() {
@@ -171,7 +171,7 @@ async function triggerSync() {
   btn.textContent = 'Syncing...';
   status.style.display = 'none';
   try {
-    const res = await fetch('/admin/integrations/sync', { method: 'POST' });
+    const res = await fetch('{{ orgBase }}/admin/integrations/sync', { method: 'POST' });
     const data = await res.json();
     status.style.display = 'block';
     if (data.ok) {

@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npm install:*)",
-      "Bash(./node_modules/.bin/tsc --noEmit)"
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(npm run *)",
+      "Bash(git -C /home/shperry/KRG/E4E-Roster-V3 diff main...HEAD -- backend/src/app.ts backend/src/routes/orgs.ts backend/src/routes/orgs/index.ts backend/src/auth.ts backend/src/services/db.ts)"
     ]
   }
 }

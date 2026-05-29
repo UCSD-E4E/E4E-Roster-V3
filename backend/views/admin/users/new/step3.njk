@@ -1,0 +1,28 @@
+{% extends "layout.njk" %}
+{% from "_macros.njk" import wizard_header %}
+{% block title %}New User — Server Access{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+
+    {{ wizard_header('Add New User — ' + wizard.user.username, [
+      {label: '1. SSO Account', state: 'done'},
+      {label: '2. GitHub & Slack', state: 'done'},
+      {label: '3. Server Access', state: 'active'}
+    ]) }}
+
+    <div class="card card-narrow">
+      <h3>Server Access</h3>
+      <p class="text-muted">
+        Provisions accounts on lab servers via Ansible.
+        <br><strong>Coming soon</strong> — not yet implemented.
+      </p>
+      <div class="form-actions" style="margin-top:1.5rem">
+        <a href="{{ orgBase }}/admin/users" class="btn btn-primary">Done — Back to Users</a>
+      </div>
+    </div>
+
+  </main>
+</div>
+{% endblock %}

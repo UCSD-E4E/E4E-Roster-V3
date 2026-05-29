@@ -11,7 +11,7 @@
       </div>
       <div style="display:flex;gap:.5rem">
         <button id="syncBtn" class="btn btn-secondary" onclick="triggerSync()">Sync from UDM</button>
-        <a href="/admin/users/new" class="btn btn-primary">+ Add User</a>
+        <a href="{{ orgBase }}/admin/users/new" class="btn btn-primary">+ Add User</a>
       </div>
     </div>
 
@@ -53,7 +53,7 @@
             <td>{{ u.github_username or '—' }}</td>
             <td>{{ u.slack_username or '—' }}</td>
             <td>
-              <a href="/admin/users/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit User</a>
+              <a href="{{ orgBase }}/admin/users/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit User</a>
             </td>
           </tr>
           {% endfor %}
@@ -75,7 +75,7 @@ async function triggerSync() {
   btn.textContent = 'Syncing…';
   status.style.display = 'none';
   try {
-    const res = await fetch('/admin/users/sync', { method: 'POST' });
+    const res = await fetch('{{ orgBase }}/admin/users/sync', { method: 'POST' });
     const data = await res.json();
     status.className = 'alert alert-' + (data.ok ? 'success' : 'error');
     status.textContent = data.ok
