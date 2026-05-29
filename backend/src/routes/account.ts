@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../services/db';
-import { updateUserLdapFields } from '../services/udm';
 import { AuthUser } from '../types/user';
 
 const router = Router();
@@ -35,8 +34,7 @@ router.post('/', async (req: Request, res: Response) => {
     [cleanSecondary, cleanPhone, user.username],
   );
 
-  updateUserLdapFields(user.username, { secondaryEmail: cleanSecondary, phone: cleanPhone })
-    .catch((err) => console.warn(`[account] LDAP write-back failed for ${user.username}:`, err));
+  // TODO: write secondaryEmail/phone back to LDAP once extended attribute strategy is decided
 
   res.redirect(`${res.locals.orgBase}/account?saved=1`);
 });

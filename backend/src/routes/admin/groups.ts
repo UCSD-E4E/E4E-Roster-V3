@@ -1,5 +1,10 @@
 import { Router, Request, Response } from 'express';
+<<<<<<< HEAD
 import { createGroup } from '../../services/udm';
+=======
+import { requireAdmin } from '../../middleware/requireAdmin';
+import { createGroup } from '../../services/ldap';
+>>>>>>> main
 import { db } from '../../services/db';
 
 const router = Router();

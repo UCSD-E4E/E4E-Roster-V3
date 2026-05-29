@@ -18,10 +18,11 @@ export interface NewUser {
   lastName: string;
   email: string;
   role: string;
-  expiryDate: string;    // ISO date string: YYYY-MM-DD
-  ldapGroups: string[];        // LDAP group CNs for SSO step
-  githubTeams: string[];       // GitHub team slugs for GitHub step
-  serverGroups: string[];      // Server groups for server-access step
+  expiryDate: string;       // ISO date string: YYYY-MM-DD
+  ldapGroups: string[];     // LDAP group CNs
+  sshPublicKeys: string[];  // ed25519 public keys (OpenSSH-LPK)
+  githubTeams: string[];    // GitHub team slugs
+  serverGroups: string[];   // Server groups
 }
 
 // Wizard session state — accumulated as each step completes
