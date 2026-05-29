@@ -73,23 +73,23 @@ export function createApp(): express.Application {
     const { user } = req;
     if (user.isSystemAdmin || user.isLocalAdmin) {
       return user.orgs.length > 0
-        ? res.redirect(`/org/${user.orgs[0].orgSlug}`)
+        ? res.redirect(`/orgs/${user.orgs[0].orgSlug}`)
         : res.redirect('/system');
     }
-    if (user.orgs.length === 1) return res.redirect(`/org/${user.orgs[0].orgSlug}`);
+    if (user.orgs.length === 1) return res.redirect(`/orgs/${user.orgs[0].orgSlug}`);
     return res.redirect('/orgs');
   });
 
   // ── Org selector (multi-org users, or users with no memberships) ──
   app.use('/orgs', requireAuth, orgsRouter);
 
-  // ── Org-scoped routes: /org/:orgSlug/* ────────────────────────────
+  // ── Org-scoped routes: /orgs/:orgSlug/* ──────────────────────────
   const orgRouter = Router({ mergeParams: true });
 
   orgRouter.use(requireAuth);
   orgRouter.use(requireOrgMember as express.RequestHandler);
   orgRouter.use((req: Request, res: Response, next: NextFunction) => {
-    res.locals.orgBase              = `/org/${req.currentOrg!.slug}`;
+    res.locals.orgBase              = `/orgs/${req.currentOrg!.slug}`;
     res.locals.currentOrg           = req.currentOrg;
     res.locals.currentOrgMembership = req.currentOrgMembership;
     res.locals.orgPrimary           = req.currentOrg!.theme_color;
@@ -102,7 +102,7 @@ export function createApp(): express.Application {
   orgRouter.use('/admin',     adminRouter);
   orgRouter.use('/pl',        plRouter);
 
-  app.use('/org/:orgSlug', orgRouter);
+  app.use('/orgs/:orgSlug', orgRouter);
 
   // ── System admin (cross-org) ──────────────────────────────────────
   app.use('/system', requireAuth, requireSystemAdmin, systemRouter);

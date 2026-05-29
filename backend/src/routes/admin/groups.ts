@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { createGroup } from '../../services/udm';
+import { createGroup } from '../../services/ldap';
 import { db } from '../../services/db';
 
 const router = Router();

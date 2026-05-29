@@ -38,3 +38,4 @@ github-app/private-keys/
 
 # Docker
 *.env.local
+db_backup_20260521_151658.sql

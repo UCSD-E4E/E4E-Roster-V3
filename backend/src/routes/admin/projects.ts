@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../../services/db';
-import * as udm from '../../services/udm';
+import { listGroups } from '../../services/ldap';
 
 const router = Router();
 // requireOrgAdmin applied at admin/index.ts level
@@ -39,8 +39,9 @@ router.get('/:id', async (req: Request, res: Response) => {
     'SELECT ldap_group FROM project_ldap_groups WHERE project_id = $1 ORDER BY ldap_group',
     [req.params.id],
   );
-  const allGroups = await udm.listGroups().catch(() => []);
-  res.render('admin/projects/detail', { project, mapped: mappedGroups.map((r) => r.ldap_group), allGroups });
+  const allGroups = await listGroups().catch(() => []);
+  const mapped = mappedGroups.map((r) => r.ldap_group);
+  res.render('admin/projects/detail', { project, mapped, allGroups });
 });
 
 router.post('/:id/groups', async (req: Request, res: Response) => {

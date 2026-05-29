@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../../services/db';
-import * as udm from '../../services/udm';
+import * as ldap from '../../services/ldap';
 import { generateUsername } from '../../services/ldap';
 import { triggerGithubInvite } from '../../services/integrations';
 import { isAnyOrgAdmin } from '../../types/user';
@@ -119,7 +119,8 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   const nonProjectGroups = rows[0].ldap_groups.filter((g) => !projGroups.includes(g));
   const mergedGroups = [...new Set([...nonProjectGroups, ...selectedProjectGroups])];
 
-  const groupResult = await udm.updateUserGroups(username, mergedGroups);
+  const groupResult = await ldap.updateUserGroups(username, mergedGroups);
+
   if (groupResult.status === 'failed') {
     const { rows: userRows } = await db.query(
       `SELECT username, first_name, last_name, email, secondary_email, phone, role,
@@ -129,8 +130,10 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
       [username],
     );
     return res.render('pl/users/edit-user', {
-      project: res.locals.project, user: userRows[0],
-      projectGroups: projGroups, error: groupResult.message,
+      project: res.locals.project,
+      user: userRows[0],
+      projectGroups: projGroups,
+      error: groupResult.message,
     });
   }
 
@@ -146,108 +149,139 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
     [mergedGroups, cleanGithub, cleanSlack, cleanSecondary, cleanPhone, disabled === 'true', username],
   );
 
-  udm.updateUserLdapFields(username, {
-    ...(cleanSlack  !== null && { slackId: cleanSlack }),
-    ...(cleanGithub !== null && { githubUsername: cleanGithub }),
-    secondaryEmail: cleanSecondary, phone: cleanPhone,
-  }).catch((err) => console.warn(`[pl] LDAP write-back failed for ${username}:`, err));
-
-  if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined, 'pl');
+  if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined);
 
   res.redirect(plBase(res, projectId));
 });
 
-// ── New user wizard ───────────────────────────────────────────────
-router.get('/new', async (req: Request, res: Response) => {
-  delete req.session.wizard;
+// ── Add existing user to project ─────────────────────────────────
+
+router.get('/add', async (req: Request, res: Response) => {
   const projectId = parseInt(req.params.projectId, 10);
-  res.render('pl/users/new/step1', {
-    project: res.locals.project,
-    groups: await projectGroups(projectId),
-  });
+  const query = (req.query.q as string)?.trim() || '';
+  const projGroups = await projectGroups(projectId);
+
+  if (!query) {
+    return res.render('pl/users/add', { project: res.locals.project, query, found: null, projGroups });
+  }
+
+  const { rows } = await db.query(
+    `SELECT username, first_name, last_name, email, role, ldap_groups
+     FROM users
+     WHERE username ILIKE $1 OR email ILIKE $1
+     LIMIT 1`,
+    [query],
+  );
+
+  const found = rows[0] ?? null;
+  if (found && (found.ldap_groups as string[]).includes(adminGroup())) {
+    return res.render('pl/users/add', {
+      project: res.locals.project, query, found: null, projGroups,
+      error: 'That user is an admin and cannot be managed via the project portal.',
+    });
+  }
+
+  res.render('pl/users/add', { project: res.locals.project, query, found, projGroups });
 });
 
-router.post('/new/sso', async (req: Request, res: Response) => {
+router.post('/add', async (req: Request, res: Response) => {
   const projectId = parseInt(req.params.projectId, 10);
-  const { firstName, lastName, email, secondaryEmail, phone, ldapGroups } =
+  const { username } = req.body as Record<string, string>;
+  const selectedProjectGroups: string[] = [req.body.groups ?? []].flat();
+  const projGroups = await projectGroups(projectId);
+
+  const { rows } = await db.query<{ ldap_groups: string[] }>(
+    `SELECT ldap_groups FROM users WHERE username = $1`, [username],
+  );
+  if (!rows.length) return res.status(404).send('User not found');
+  if (rows[0].ldap_groups.includes(adminGroup())) return res.status(403).send('Access denied.');
+
+  // Merge: keep groups outside this project, apply chosen project groups
+  const nonProjectGroups = rows[0].ldap_groups.filter((g) => !projGroups.includes(g));
+  const mergedGroups = [...new Set([...nonProjectGroups, ...selectedProjectGroups])];
+
+  const result = await ldap.updateUserGroups(username, mergedGroups);
+  if (result.status === 'failed') {
+    return res.status(500).send(`Failed to update groups: ${result.message}`);
+  }
+
+  await db.query(
+    `UPDATE users SET ldap_groups = $1, updated_at = NOW() WHERE username = $2`,
+    [mergedGroups, username],
+  );
+
+  res.redirect(`/pl/projects/${projectId}/users`);
+});
+
+// ── New user ──────────────────────────────────────────────────────
+
+router.get('/new', async (req: Request, res: Response) => {
+  const projectId = parseInt(req.params.projectId, 10);
+  const groups = await projectGroups(projectId);
+  const expiryDate = ninetyDaysFromNow();
+  res.render('pl/users/new', { project: res.locals.project, groups, expiryDate });
+});
+
+router.post('/new', async (req: Request, res: Response) => {
+  const projectId = parseInt(req.params.projectId, 10);
+  const { firstName, lastName, email, secondaryEmail, phone, githubUsername, slackUsername, ldapGroups } =
     req.body as Record<string, string | string[]>;
 
-  const cleanEmail     = (email as string).trim().toLowerCase();
-  const cleanFirst     = (firstName as string).trim();
-  const cleanLast      = (lastName as string).trim();
+  const projGroups = await projectGroups(projectId);
+  const cleanFirst = (firstName as string).trim();
+  const cleanLast = (lastName as string).trim();
+  const cleanEmail = (email as string).trim().toLowerCase();
   const cleanSecondary = (secondaryEmail as string)?.trim().toLowerCase() || null;
-  const cleanPhone     = (phone as string)?.trim() || null;
+  const cleanPhone = (phone as string)?.trim() || null;
+  const cleanGithub = (githubUsername as string)?.trim() || null;
+  const cleanSlack = (slackUsername as string)?.trim() || null;
 
-  const projGroups  = await projectGroups(projectId);
+  // Enforce 90-day expiry and student role server-side — PLs cannot change these
+  const expiryDate = ninetyDaysFromNow();
+  // Only allow groups belonging to this project
   const chosenGroups = [ldapGroups ?? []].flat().filter((g) => projGroups.includes(g));
 
   const user: NewUser = {
-    username:    generateUsername(cleanFirst, cleanLast, cleanEmail),
-    firstName:   cleanFirst,
-    lastName:    cleanLast,
-    email:       cleanEmail,
-    role:        'student',
-    expiryDate:  ninetyDaysFromNow(),  // enforced server-side
-    ldapGroups:  chosenGroups,
+    username: generateUsername(cleanFirst, cleanLast, cleanEmail),
+    firstName: cleanFirst,
+    lastName: cleanLast,
+    email: cleanEmail,
+    role: 'student',
+    expiryDate,
+    ldapGroups: chosenGroups,
+    sshPublicKeys: [],
     githubTeams: [],
     serverGroups: [],
   };
 
-  const result = await udm.createUser(user);
-  if (result.status === 'success') {
+  const ldapResult = await ldap.createUser(user);
+
+  if (ldapResult.status !== 'failed') {
     await db.query(
       `INSERT INTO users
-         (username, first_name, last_name, email, secondary_email, phone, role, expiry_date, ldap_groups, last_synced_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
-       ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role, updated_at = NOW()`,
+         (username, first_name, last_name, email, secondary_email, phone, role,
+          expiry_date, ldap_groups, github_username, slack_username, last_synced_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+       ON CONFLICT (username) DO UPDATE SET
+         github_username = COALESCE(EXCLUDED.github_username, users.github_username),
+         slack_username  = COALESCE(EXCLUDED.slack_username,  users.slack_username),
+         updated_at      = NOW()`,
       [user.username, user.firstName, user.lastName, user.email,
-       cleanSecondary, cleanPhone, user.role, user.expiryDate, user.ldapGroups],
+       cleanSecondary, cleanPhone, user.role, user.expiryDate, user.ldapGroups,
+       cleanGithub, cleanSlack],
     );
+    if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined);
   }
 
-  req.session.wizard = { user, steps: { sso: result } };
-  res.render('pl/users/new/step1-result', {
-    project: res.locals.project, user, result,
-    nextUrl: `${plBase(res, projectId)}/new/github-slack`,
+  res.render('pl/users/new-result', {
+    project: res.locals.project,
+    user,
+    ldapResult,
+    tempPassword: ldapResult.tempPassword,
   });
 });
 
-router.get('/new/github-slack', (req: Request, res: Response) => {
-  if (!req.session.wizard?.steps.sso) {
-    return res.redirect(`${plBase(res, req.params.projectId)}/new`);
-  }
-  res.render('pl/users/new/step2', { project: res.locals.project, wizard: req.session.wizard });
-});
-
-router.post('/new/github-slack', async (req: Request, res: Response) => {
-  const { projectId } = req.params;
-  if (!req.session.wizard?.steps.sso) {
-    return res.redirect(`${plBase(res, projectId)}/new`);
-  }
-
-  const { githubUsername, slackUsername } = req.body as Record<string, string>;
-  const { username } = req.session.wizard.user;
-  const cleanGithub = githubUsername?.trim() || null;
-  const cleanSlack  = slackUsername?.trim()  || null;
-
-  await db.query(
-    'UPDATE users SET github_username=$1, slack_username=$2, updated_at=NOW() WHERE username=$3',
-    [cleanGithub, cleanSlack, username],
-  );
-
-  if (cleanGithub || cleanSlack) {
-    udm.updateUserLdapFields(username, {
-      ...(cleanSlack  && { slackId: cleanSlack }),
-      ...(cleanGithub && { githubUsername: cleanGithub }),
-    }).catch((err) => console.warn(`[pl-wizard] LDAP write-back failed for ${username}:`, err));
-  }
-
-  if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined, 'pl-wizard');
-
-  res.redirect(plBase(res, projectId));
-});
-
-// ── Audit log ─────────────────────────────────────────────────────
+// ── Audit log ────────────────────────────────────────────────────
 router.get('/:username/audit', async (req: Request, res: Response) => {
   const { username } = req.params;
   const { rows: [user] } = await db.query(

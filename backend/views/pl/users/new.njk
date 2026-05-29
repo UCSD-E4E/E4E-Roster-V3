@@ -6,18 +6,14 @@
   {% include "pl/_header.njk" %}
   <main class="app-main">
 
-    {{ wizard_header('Add Member to ' + project.name, [
-      {label: '1. SSO Account', state: 'active'},
-      {label: '2. GitHub & Slack', state: ''}
-    ]) }}
+    <div class="page-header">
+      <h2>Add Member to {{ project.name }}</h2>
+    </div>
 
-    <div class="card card-narrow">
-      <h3>Create SSO Account</h3>
-      <p class="text-muted" style="margin-bottom:1.5rem">
-        Creates the user in Univention LDAP. Authentik will sync the account automatically.
-      </p>
+    <div class="card" style="max-width:640px">
+      <form method="POST" action="{{ orgBase }}/pl/projects/{{ project.id }}/users/new">
 
-      <form method="POST" action="{{ orgBase }}/pl/projects/{{ project.id }}/users/new/sso">
+        <h3>Basic Info</h3>
 
         <div class="form-row">
           <div class="form-group">
@@ -37,32 +33,40 @@
         </div>
 
         <div class="form-group">
-          <label for="secondaryEmail">Long-term email <span class="text-muted">(optional — personal, persists after graduation)</span></label>
+          <label for="secondaryEmail">Long-term email <span class="text-muted">(optional)</span></label>
           <input type="email" id="secondaryEmail" name="secondaryEmail" autocomplete="off"
                  placeholder="personal@gmail.com">
+          <span class="form-hint">Personal email — persists after graduation.</span>
         </div>
 
         <div class="form-group">
-          <label for="phone">Phone number <span class="text-muted">(optional)</span></label>
-          <input type="tel" id="phone" name="phone" autocomplete="off"
-                 placeholder="+1 555 000 0000">
+          <label for="phone">Phone <span class="text-muted">(optional)</span></label>
+          <input type="tel" id="phone" name="phone" autocomplete="off" placeholder="+1 555 000 0000">
         </div>
 
         <div class="form-group">
           <label>Username <span class="text-muted">(auto-generated)</span></label>
           <div class="username-preview" id="usernamePreview">—</div>
-          <span class="form-hint">Format: first initial . last name . 3-digit hash of email</span>
+          <span class="form-hint">first initial · last name · 3-digit hash of email</span>
+        </div>
+
+        <h3 style="margin-top:1.5rem">Account</h3>
+
+        <div class="form-group">
+          <label>Role</label>
+          <div class="username-preview" style="font-size:.9rem">Student</div>
+          <span class="form-hint">All members added via the project portal are students. An admin can change this later.</span>
         </div>
 
         <div class="form-group">
           <label>Account expiry</label>
-          <input type="hidden" name="expiryDate" id="expiryDate">
-          <div class="username-preview" id="expiryPreview" style="font-size:.9rem"></div>
-          <span class="form-hint">Fixed at 90 days from today. An admin can adjust this later.</span>
+          <div class="username-preview" id="expiryPreview" style="font-size:.9rem">{{ expiryDate }}</div>
+          <span class="form-hint">Fixed at 90 days from today. An admin can extend this if needed.</span>
         </div>
 
+        <h3 style="margin-top:1.5rem">Access <span class="text-muted" style="font-weight:400;font-size:.9rem">({{ project.name }} groups only)</span></h3>
+
         <div class="form-group">
-          <label>LDAP Groups <span class="text-muted">({{ project.name }} only)</span></label>
           {% if groups.length %}
           <div class="checkbox-grid">
             {% for group in groups %}
@@ -76,8 +80,21 @@
           {% endif %}
         </div>
 
+        <h3 style="margin-top:1.5rem">Integrations <span class="text-muted" style="font-weight:400;font-size:.9rem">(optional)</span></h3>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="githubUsername">GitHub username</label>
+            <input type="text" id="githubUsername" name="githubUsername" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="slackUsername">Slack username</label>
+            <input type="text" id="slackUsername" name="slackUsername" autocomplete="off">
+          </div>
+        </div>
+
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary">Create SSO Account →</button>
+          <button type="submit" class="btn btn-primary">Add Member</button>
           <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Cancel</a>
         </div>
 
@@ -90,10 +107,8 @@
   async function sha512digits(email) {
     const msgBuffer = new TextEncoder().encode(email);
     const hashBuffer = await crypto.subtle.digest('SHA-512', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    const digits = Number(BigInt('0x' + hashHex) % 999n);
-    return digits.toString().padStart(3, '0');
+    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return (Number(BigInt('0x' + hashHex) % 999n)).toString().padStart(3, '0');
   }
 
   async function updatePreview() {
@@ -109,11 +124,5 @@
   ['firstName', 'lastName', 'email'].forEach(id => {
     document.getElementById(id).addEventListener('input', updatePreview);
   });
-
-  const expiry = new Date();
-  expiry.setDate(expiry.getDate() + 90);
-  const expiryStr = expiry.toISOString().slice(0, 10);
-  document.getElementById('expiryDate').value = expiryStr;
-  document.getElementById('expiryPreview').textContent = expiryStr;
 </script>
 {% endblock %}

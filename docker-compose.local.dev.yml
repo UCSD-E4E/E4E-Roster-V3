@@ -1,0 +1,42 @@
+# Dev overlay for local testing — hot reload + smee webhook forwarding.
+# Combine with docker-compose.local.yml:
+#   docker compose -f docker-compose.local.yml -f docker-compose.local.dev.yml up --build
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/views:/app/views
+      - ./frontend/static:/app/public
+      - ./backend/certs:/app/certs
+      - backend_node_modules:/app/node_modules
+    environment:
+      NODE_ENV: dev
+
+  # github-app:
+  #   build:
+  #     context: .
+  #     dockerfile: github-app/Dockerfile.dev
+  #   volumes:
+  #     - ./github-app/src:/app/src
+  #     - ./github-app/private-keys:/app/private-keys
+  #     - github_app_node_modules:/app/node_modules
+  #   environment:
+  #     NODE_ENV: dev
+
+  # smee:
+  #   image: node:20-alpine
+  #   env_file: .env
+  #   command: >
+  #     sh -c "npm install -g smee-client &&
+  #            smee --url $$SMEE_URL --target http://github-app:${GITHUB_APP_PORT:-3001}/webhook"
+  #   depends_on:
+  #     - github-app
+  #   restart: unless-stopped
+
+volumes:
+  backend_node_modules:
+  github_app_node_modules:

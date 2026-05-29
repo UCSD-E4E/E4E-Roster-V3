@@ -1,0 +1,62 @@
+{% extends "layout.njk" %}
+{% block title %}New User — Result{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <h2>New User — {{ user.username }}</h2>
+    </div>
+
+    <div class="card" style="max-width:640px">
+
+      {# LDAP account #}
+      <h3>LDAP Account</h3>
+      {% if ldapResult.status === 'success' %}
+      <div class="alert alert-success">{{ ldapResult.message }}</div>
+      {% if tempPassword %}
+      <div class="form-group" style="margin-top:.75rem">
+        <label>Temporary password</label>
+        <code style="display:block;padding:.5rem;background:var(--surface-2);border-radius:4px;font-size:.95rem">{{ tempPassword }}</code>
+        <span class="form-hint">Share this securely — it won't be shown again.</span>
+      </div>
+      {% endif %}
+      {% elif ldapResult.status === 'already_exists' %}
+      <div class="alert alert-warning">{{ ldapResult.message }}</div>
+      {% else %}
+      <div class="alert alert-error">{{ ldapResult.message }}</div>
+      {% endif %}
+
+      {# SSH keys #}
+      {% if sshResults.length %}
+      <h3 style="margin-top:1.5rem">SSH Keys</h3>
+      <table class="table" style="margin-top:.5rem">
+        <thead><tr><th>Key</th><th>Result</th></tr></thead>
+        <tbody>
+          {% for r in sshResults %}
+          <tr>
+            <td><code style="font-size:.8rem">{{ r.preview }}</code></td>
+            <td>
+              {% if r.status === 'success' %}
+              <span class="badge badge-success">added</span>
+              {% else %}
+              <span class="badge badge-error" title="{{ r.message }}">failed</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+
+      <div class="form-actions" style="margin-top:1.5rem">
+        <a href="/admin/users/{{ user.username }}/edit" class="btn btn-secondary">Edit User</a>
+        <a href="/admin/users/new" class="btn btn-secondary">Add Another</a>
+        <a href="/admin/users" class="btn btn-ghost">Back to Users</a>
+      </div>
+
+    </div>
+  </main>
+</div>
+{% endblock %}
