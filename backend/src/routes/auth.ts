@@ -28,16 +28,19 @@ router.get(
     console.log('[auth/callback] sessionID:', req.sessionID, '| oidcKey:', oidcKey ?? 'MISSING', '| sessionKeys:', Object.keys(req.session));
     next();
   },
-  passport.authenticate('oidc', { failureRedirect: '/login?error=1' }),
   (req: Request, res: Response, next: NextFunction) => {
-    const user = req.user as AuthUser;
-    req.session.regenerate((regenErr) => {
-      if (regenErr) return next(regenErr);
-      req.login(user, (loginErr) => {
-        if (loginErr) return next(loginErr);
-        res.redirect('/');
+    passport.authenticate('oidc', (err: Error | null, user: AuthUser | false, info: unknown) => {
+      console.log('[auth/callback] passport result — err:', err?.message ?? null, '| user:', (user as AuthUser)?.username ?? false, '| info:', info);
+      if (err) return next(err);
+      if (!user) return res.redirect('/login?error=1');
+      req.session.regenerate((regenErr) => {
+        if (regenErr) return next(regenErr);
+        req.login(user, (loginErr) => {
+          if (loginErr) return next(loginErr);
+          res.redirect('/');
+        });
       });
-    });
+    })(req, res, next);
   },
 );
 

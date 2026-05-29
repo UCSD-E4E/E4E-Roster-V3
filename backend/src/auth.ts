@@ -15,6 +15,7 @@ export function setupPassport(client: Client): void {
         done: (err: Error | null, user?: AuthUser) => void,
       ) => {
         try {
+          console.log('[auth] tokenSet received, idToken claims:', JSON.stringify(_tokenSet.claims(), null, 2));
           console.log('[auth] userinfo from Authentik:', JSON.stringify(userinfo, null, 2));
 
           const groups = ((userinfo as Record<string, unknown>).groups as string[]) ?? [];
