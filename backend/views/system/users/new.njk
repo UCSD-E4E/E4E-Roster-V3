@@ -1,0 +1,144 @@
+{% extends "layout.njk" %}
+{% block title %}New User — System{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "system/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <h2>Add New User</h2>
+    </div>
+
+    <div class="card" style="max-width:640px">
+      <form method="POST" action="/system/users/new">
+
+        <h3>Basic Info</h3>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="firstName">First name</label>
+            <input type="text" id="firstName" name="firstName" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="lastName">Last name</label>
+            <input type="text" id="lastName" name="lastName" required autocomplete="off">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="email">Institutional email</label>
+          <input type="email" id="email" name="email" required autocomplete="off">
+          <span class="form-hint">Used to generate the username.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="secondaryEmail">Long-term email <span class="text-muted">(optional)</span></label>
+          <input type="email" id="secondaryEmail" name="secondaryEmail" autocomplete="off"
+                 placeholder="personal@gmail.com">
+          <span class="form-hint">Personal email — persists after graduation.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="phone">Phone <span class="text-muted">(optional)</span></label>
+          <input type="tel" id="phone" name="phone" autocomplete="off" placeholder="+1 555 000 0000">
+        </div>
+
+        <div class="form-group">
+          <label>Username <span class="text-muted">(auto-generated)</span></label>
+          <div class="username-preview" id="usernamePreview">—</div>
+          <span class="form-hint">first initial · last name · 3-digit hash of email</span>
+        </div>
+
+        <h3 style="margin-top:1.5rem">Account</h3>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="role">Role</label>
+            <select id="role" name="role" required>
+              <option value="">— select —</option>
+              <option value="student">Student</option>
+              <option value="researcher">Researcher</option>
+              <option value="staff">Staff</option>
+              <option value="alumni">Alumni</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="expiryDate">Expiry date</label>
+            <input type="date" id="expiryDate" name="expiryDate" required>
+            <span class="form-hint">Account locked after this date.</span>
+          </div>
+        </div>
+
+        <h3 style="margin-top:1.5rem">Access</h3>
+
+        <div class="form-group">
+          <label>LDAP Groups</label>
+          {% if groups.length %}
+          <div class="checkbox-grid">
+            {% for group in groups %}
+            <label class="checkbox-label">
+              <input type="checkbox" name="ldapGroups" value="{{ group }}"> {{ group }}
+            </label>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="form-hint">Could not fetch groups — can be assigned after account creation.</p>
+          {% endif %}
+        </div>
+
+        <div class="form-group">
+          <label for="sshKeys">SSH public keys <span class="text-muted">(optional — one per line, ed25519 only)</span></label>
+          <textarea id="sshKeys" name="sshKeys" rows="4" autocomplete="off"
+                    placeholder="ssh-ed25519 AAAA..."></textarea>
+        </div>
+
+        <h3 style="margin-top:1.5rem">Integrations <span class="text-muted" style="font-weight:400;font-size:.9rem">(optional)</span></h3>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="githubUsername">GitHub username</label>
+            <input type="text" id="githubUsername" name="githubUsername" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="slackUsername">Slack username</label>
+            <input type="text" id="slackUsername" name="slackUsername" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create User</button>
+          <a href="/system/users" class="btn btn-ghost">Cancel</a>
+        </div>
+
+      </form>
+    </div>
+  </main>
+</div>
+
+<script>
+  async function sha512digits(email) {
+    const msgBuffer = new TextEncoder().encode(email);
+    const hashBuffer = await crypto.subtle.digest('SHA-512', msgBuffer);
+    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return (Number(BigInt('0x' + hashHex) % 999n)).toString().padStart(3, '0');
+  }
+
+  async function updatePreview() {
+    const first = document.getElementById('firstName').value.trim().replace(/[^a-zA-Z]/g, '');
+    const last  = document.getElementById('lastName').value.trim().replace(/[^a-zA-Z]/g, '');
+    const email = document.getElementById('email').value.trim().toLowerCase();
+    const preview = document.getElementById('usernamePreview');
+    if (!first || !last || !email.includes('@')) { preview.textContent = '—'; return; }
+    const digits = await sha512digits(email);
+    preview.textContent = `${first[0].toLowerCase()}.${last.toLowerCase()}.${digits}`;
+  }
+
+  ['firstName', 'lastName', 'email'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updatePreview);
+  });
+
+  const expiry = new Date();
+  expiry.setMonth(expiry.getMonth() + 3);
+  document.getElementById('expiryDate').value = expiry.toISOString().slice(0, 10);
+</script>
+{% endblock %}
