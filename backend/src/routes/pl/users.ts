@@ -210,7 +210,7 @@ router.post('/add', async (req: Request, res: Response) => {
     [mergedGroups, username],
   );
 
-  res.redirect(`/pl/projects/${projectId}/users`);
+  res.redirect(plBase(res, projectId));
 });
 
 // ── New user ──────────────────────────────────────────────────────
