@@ -120,6 +120,55 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   res.redirect(res.locals.orgBase + '/admin/users');
 });
 
+// ── Add existing user to org ──────────────────────────────────────
+router.get('/add', async (req: Request, res: Response) => {
+  const query = (req.query.q as string)?.trim() || '';
+  const orgId = res.locals.currentOrg?.id as number;
+
+  if (!query) {
+    return res.render('admin/users/add', { query, found: null });
+  }
+
+  const { rows } = await db.query(
+    `SELECT username, first_name, last_name, email, role
+     FROM users
+     WHERE username ILIKE $1 OR email ILIKE $1
+     LIMIT 1`,
+    [query],
+  );
+
+  if (!rows.length) {
+    return res.render('admin/users/add', { query, found: null, notFound: true });
+  }
+
+  const found = rows[0];
+  const { rows: existing } = await db.query(
+    'SELECT role FROM user_orgs WHERE username = $1 AND org_id = $2',
+    [found.username, orgId],
+  );
+
+  res.render('admin/users/add', { query, found, currentRole: existing[0]?.role ?? null });
+});
+
+router.post('/add', async (req: Request, res: Response) => {
+  const { username, role } = req.body as Record<string, string>;
+  const orgId = res.locals.currentOrg?.id as number;
+
+  if (!username || !role) return res.status(400).send('Missing username or role');
+
+  const { rows } = await db.query('SELECT username FROM users WHERE username = $1', [username]);
+  if (!rows.length) return res.status(404).send('User not found');
+
+  await db.query(
+    `INSERT INTO user_orgs (username, org_id, role)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (username, org_id) DO UPDATE SET role = EXCLUDED.role`,
+    [username, orgId, role],
+  );
+
+  res.redirect(res.locals.orgBase + '/admin/users');
+});
+
 // ── New user ──────────────────────────────────────────────────────
 router.get('/new', async (_req: Request, res: Response) => {
   const groups = await ldap.listGroups().catch(() => []);

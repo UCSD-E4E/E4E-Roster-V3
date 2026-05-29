@@ -1,0 +1,70 @@
+{% extends "layout.njk" %}
+{% block title %}Add Existing User — {{ currentOrg.name }}{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "admin/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <h2>Add Existing User to {{ currentOrg.name }}</h2>
+    </div>
+
+    <div class="card" style="max-width:640px">
+
+      <form method="GET" action="{{ orgBase }}/admin/users/add">
+        <div class="form-group">
+          <label for="q">Find by username or email</label>
+          <div style="display:flex;gap:.5rem;align-items:flex-end">
+            <input type="text" id="q" name="q" value="{{ query }}" autocomplete="off"
+                   placeholder="s.perry.543 or shperry@ucsd.edu" style="flex:1">
+            <button type="submit" class="btn btn-secondary">Search</button>
+          </div>
+        </div>
+      </form>
+
+      {% if notFound %}
+      <p class="text-muted" style="margin-top:1rem">No user found for <strong>{{ query }}</strong>.</p>
+      {% endif %}
+
+      {% if found %}
+      <hr style="margin:1.5rem 0;border:none;border-top:1px solid var(--border)">
+      <h3>{{ found.first_name }} {{ found.last_name }} <code style="font-size:.85rem">{{ found.username }}</code></h3>
+      <p class="text-muted" style="margin-bottom:1rem">{{ found.email }} &mdash; {{ found.role or 'no role' }}</p>
+
+      {% if currentRole %}
+      <div class="alert alert-warning" style="margin-bottom:1rem">
+        Already a member of {{ currentOrg.name }} as <strong>{{ currentRole | replace('_', ' ') }}</strong>. Submitting will update their role.
+      </div>
+      {% endif %}
+
+      <form method="POST" action="{{ orgBase }}/admin/users/add">
+        <input type="hidden" name="username" value="{{ found.username }}">
+
+        <div class="form-group">
+          <label for="role">Role in {{ currentOrg.name }}</label>
+          <select id="role" name="role" required>
+            <option value="member"       {{ 'selected' if currentRole == 'member'       else '' }}>Member</option>
+            <option value="project_lead" {{ 'selected' if currentRole == 'project_lead' else '' }}>Project Lead</option>
+            <option value="org_admin"    {{ 'selected' if currentRole == 'org_admin'    else '' }}>Org Admin</option>
+          </select>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">
+            {{ 'Update Role' if currentRole else 'Add to Org' }}
+          </button>
+          <a href="{{ orgBase }}/admin/users" class="btn btn-ghost">Cancel</a>
+        </div>
+      </form>
+      {% endif %}
+
+      {% if not query %}
+      <div class="form-actions" style="margin-top:1.5rem">
+        <a href="{{ orgBase }}/admin/users/new" class="btn btn-ghost">Create a new user instead →</a>
+      </div>
+      {% endif %}
+
+    </div>
+  </main>
+</div>
+{% endblock %}

@@ -11,8 +11,10 @@
         {{ back_link(orgBase + '/pl/projects', 'My Projects') }}
         <h2 style="margin:.25rem 0 0">{{ project.name }}</h2>
       </div>
-      <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/add" class="btn btn-secondary">+ Add Existing</a>
-      <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/new" class="btn btn-primary">+ New Member</a>
+      <div style="display:flex;gap:.5rem">
+        <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/add" class="btn btn-secondary">+ Add Existing</a>
+        <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/new" class="btn btn-primary">+ New Member</a>
+      </div>
     </div>
 
     {% if warning %}
