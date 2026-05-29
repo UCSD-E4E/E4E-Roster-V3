@@ -15,15 +15,23 @@ router.get('/', async (req: Request, res: Response) => {
   const selectedGroup = (req.query.group as string) || null;
 
   let mappings: { id: number; service: string; target_id: string; target_name: string }[] = [];
+  let orgRole: string | null = null;
   if (selectedGroup) {
-    const { rows } = await db.query(
-      'SELECT id, service, target_id, target_name FROM group_mappings WHERE ldap_group = $1 ORDER BY service, target_name',
-      [selectedGroup],
-    );
-    mappings = rows;
+    const [mappingRows, roleRow] = await Promise.all([
+      db.query(
+        'SELECT id, service, target_id, target_name FROM group_mappings WHERE ldap_group = $1 ORDER BY service, target_name',
+        [selectedGroup],
+      ),
+      db.query<{ role: string }>(
+        'SELECT role FROM org_ldap_group_mappings WHERE org_id = $1 AND ldap_group = $2',
+        [orgId, selectedGroup],
+      ),
+    ]);
+    mappings = mappingRows.rows;
+    orgRole = roleRow.rows[0]?.role ?? null;
   }
 
-  res.render('admin/integrations/index', { groups, selectedGroup, mappings });
+  res.render('admin/integrations/index', { groups, selectedGroup, mappings, orgRole });
 });
 
 router.post('/mappings', async (req: Request, res: Response) => {
@@ -46,6 +54,26 @@ router.post('/mappings', async (req: Request, res: Response) => {
 router.post('/mappings/:id/delete', async (req: Request, res: Response) => {
   const { ldapGroup } = req.body as { ldapGroup: string };
   await db.query('DELETE FROM group_mappings WHERE id = $1', [req.params.id]);
+  res.redirect(`${res.locals.orgBase}/admin/integrations?group=${encodeURIComponent(ldapGroup)}`);
+});
+
+router.post('/role', async (req: Request, res: Response) => {
+  const { ldapGroup, role } = req.body as Record<string, string>;
+  const orgId = res.locals.currentOrg?.id as number;
+  if (!ldapGroup) return res.status(400).send('Missing group');
+  if (role) {
+    await db.query(
+      `INSERT INTO org_ldap_group_mappings (org_id, ldap_group, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (org_id, ldap_group) DO UPDATE SET role = EXCLUDED.role`,
+      [orgId, ldapGroup, role],
+    );
+  } else {
+    await db.query(
+      'DELETE FROM org_ldap_group_mappings WHERE org_id = $1 AND ldap_group = $2',
+      [orgId, ldapGroup],
+    );
+  }
   res.redirect(`${res.locals.orgBase}/admin/integrations?group=${encodeURIComponent(ldapGroup)}`);
 });
 

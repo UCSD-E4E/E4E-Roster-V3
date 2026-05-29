@@ -1,5 +1,5 @@
 {% extends "layout.njk" %}
-{% block title %}Integrations — Admin{% endblock %}
+{% block title %}Group Management — Admin{% endblock %}
 {% block body %}
 <div class="app-layout">
   {% include "admin/_header.njk" %}
@@ -7,9 +7,9 @@
 
     <div class="page-header">
       <div>
-        <h2>Group Integrations</h2>
+        <h2>Group Management</h2>
         <p class="text-muted" style="margin:0;font-size:.9rem">
-          Map LDAP groups to GitHub teams and Slack channels.
+          Set group roles and map LDAP groups to GitHub teams and Slack channels.
         </p>
       </div>
       <div>
@@ -48,7 +48,26 @@
 
         <h3 style="margin-top:0">{{ selectedGroup }}</h3>
 
-        {# Current mappings #}
+        {# Org role #}
+        <div class="card" style="margin-bottom:1.5rem">
+          <h4 style="margin:0 0 .75rem">Org Role</h4>
+          <p class="text-muted" style="font-size:.875rem;margin:0 0 1rem">
+            Members of this group are automatically granted this role in {{ currentOrg.name }}.
+          </p>
+          <form method="POST" action="{{ orgBase }}/admin/integrations/role"
+                style="display:flex;gap:.5rem;align-items:center">
+            <input type="hidden" name="ldapGroup" value="{{ selectedGroup }}">
+            <select name="role" class="form-input" style="width:auto">
+              <option value=""          {{ 'selected' if not orgRole }}>— no role —</option>
+              <option value="member"       {{ 'selected' if orgRole == 'member' }}>Member</option>
+              <option value="project_lead" {{ 'selected' if orgRole == 'project_lead' }}>Project Lead</option>
+              <option value="org_admin"    {{ 'selected' if orgRole == 'org_admin' }}>Org Admin</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+          </form>
+        </div>
+
+        {# GitHub/Slack mappings #}
         {% set githubMappings = [] %}
         {% set slackMappings = [] %}
         {% for m in mappings %}
