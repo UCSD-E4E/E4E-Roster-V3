@@ -1,0 +1,33 @@
+{% extends "layout.njk" %}
+{% block title %}Admin Login — Roster{% endblock %}
+{% block body %}
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-header">
+      <h1>Roster</h1>
+      <p>Emergency admin access</p>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/local-login" style="margin-top:1rem">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Sign in</button>
+    </form>
+
+    <p class="auth-note" style="margin-top:1rem">
+      This is a break-glass login for initial setup only.
+      Use SSO for normal access.
+    </p>
+  </div>
+</div>
+{% endblock %}

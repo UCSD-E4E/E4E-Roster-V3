@@ -1,0 +1,30 @@
+{# ── Wizard header ──────────────────────────────────────────────────────────
+   Usage: wizard_header(title, steps)
+   steps: array of {label: string, state: 'active' | 'done' | ''}
+#}
+{% macro wizard_header(title, steps) %}
+<div class="wizard-header">
+  <h2>{{ title }}</h2>
+  <ol class="wizard-steps">
+    {% for step in steps %}
+    <li{% if step.state %} class="{{ step.state }}"{% endif %}>{{ step.label }}</li>
+    {% endfor %}
+  </ol>
+</div>
+{% endmacro %}
+
+{# ── Back link ──────────────────────────────────────────────────────────────
+   Usage: back_link(href, label)
+#}
+{% macro back_link(href, label) %}<a href="{{ href }}" class="back-link">&larr; {{ label }}</a>{% endmacro %}
+
+{# ── Status badge ───────────────────────────────────────────────────────────
+   Usage: status_badge(disabled)
+#}
+{% macro status_badge(disabled) %}
+{%- if disabled -%}
+<span class="badge-status badge-status--disabled">Disabled</span>
+{%- else -%}
+<span class="badge-status badge-status--active">Active</span>
+{%- endif -%}
+{% endmacro %}

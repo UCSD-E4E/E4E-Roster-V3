@@ -16,7 +16,7 @@
       <div class="alert alert-error">{{ error }}</div>
       {% endif %}
 
-      <form method="POST" action="/admin/users/{{ user.username }}/edit">
+      <form method="POST" action="{{ orgBase }}/admin/users/{{ user.username }}/edit">
 
         <div class="form-group">
           <label for="role">Role</label>
@@ -89,7 +89,7 @@
 
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Save</button>
-          <a href="/admin/users" class="btn btn-ghost">Cancel</a>
+          <a href="{{ orgBase }}/admin/users" class="btn btn-ghost">Cancel</a>
         </div>
 
       </form>

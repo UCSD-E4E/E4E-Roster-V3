@@ -33,7 +33,7 @@
             </td>
             <td>{{ p.member_count }}</td>
             <td>
-              <a href="/pl/projects/{{ p.id }}/users" class="btn btn-primary btn-sm">Manage Members</a>
+              <a href="{{ orgBase }}/pl/projects/{{ p.id }}/users" class="btn btn-primary btn-sm">Manage Members</a>
             </td>
           </tr>
           {% endfor %}

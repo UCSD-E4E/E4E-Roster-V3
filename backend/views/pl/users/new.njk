@@ -1,4 +1,5 @@
 {% extends "layout.njk" %}
+{% from "_macros.njk" import wizard_header %}
 {% block title %}Add Member — {{ project.name }}{% endblock %}
 {% block body %}
 <div class="app-layout">
@@ -10,7 +11,7 @@
     </div>
 
     <div class="card" style="max-width:640px">
-      <form method="POST" action="/pl/projects/{{ project.id }}/users/new">
+      <form method="POST" action="{{ orgBase }}/pl/projects/{{ project.id }}/users/new">
 
         <h3>Basic Info</h3>
 
@@ -94,7 +95,7 @@
 
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Add Member</button>
-          <a href="/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Cancel</a>
+          <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Cancel</a>
         </div>
 
       </form>

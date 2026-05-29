@@ -10,7 +10,7 @@
     </div>
 
     <div class="card" style="max-width:640px">
-      <form method="POST" action="/admin/users/new">
+      <form method="POST" action="{{ orgBase }}/admin/users/new">
 
         <h3>Basic Info</h3>
 
@@ -107,7 +107,7 @@
 
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Create User</button>
-          <a href="/admin/users" class="btn btn-ghost">Cancel</a>
+          <a href="{{ orgBase }}/admin/users" class="btn btn-ghost">Cancel</a>
         </div>
 
       </form>

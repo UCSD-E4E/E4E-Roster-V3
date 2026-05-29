@@ -1,13 +1,13 @@
 import { Router, Request, Response } from 'express';
-import { requireAdmin } from '../../middleware/requireAdmin';
 import { generateUsername } from '../../services/ldap';
 import * as ldap from '../../services/ldap';
 import { db } from '../../services/db';
 import { syncUsers } from '../../services/sync';
+import { triggerGithubInvite } from '../../services/integrations';
 import { NewUser } from '../../services/types';
 
 const router = Router();
-router.use(requireAdmin);
+// requireOrgAdmin is applied at admin/index.ts level
 
 // ── User list ─────────────────────────────────────────────────────
 router.get('/', async (_req: Request, res: Response) => {
@@ -28,8 +28,8 @@ router.post('/sync', async (_req: Request, res: Response) => {
     const result = await syncUsers();
     res.json({ ok: true, ...result });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ ok: false, message });
+    console.error('[admin/sync]', err);
+    res.status(500).json({ ok: false, message: 'Sync failed — see server logs.' });
   }
 });
 
@@ -90,29 +90,29 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
     });
   }
 
-  const cleanGithub = githubUsername?.trim() || null;
-  const cleanSlack = slackUsername?.trim() || null;
+  const cleanGithub    = githubUsername?.trim()  || null;
+  const cleanSlack     = slackUsername?.trim()   || null;
   const cleanSecondary = secondaryEmail?.trim().toLowerCase() || null;
-  const cleanPhone = phone?.trim() || null;
+  const cleanPhone     = phone?.trim() || null;
 
   await db.query(
     `UPDATE users SET
-       role             = $1,
-       expiry_date      = $2,
-       ldap_groups      = $3,
-       github_username  = $4,
-       slack_username   = $5,
-       secondary_email  = $6,
-       phone            = $7,
-       updated_at       = NOW()
+       role            = $1,
+       expiry_date     = $2,
+       ldap_groups     = $3,
+       github_username = $4,
+       slack_username  = $5,
+       secondary_email = $6,
+       phone           = $7,
+       updated_at      = NOW()
      WHERE username = $8`,
     [role || null, expiryDate || null, selectedGroups, cleanGithub, cleanSlack,
      cleanSecondary, cleanPhone, username],
   );
 
-  if (cleanGithub) triggerGithubInvite(cleanGithub);
+  if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined);
 
-  res.redirect('/admin/users');
+  res.redirect(res.locals.orgBase + '/admin/users');
 });
 
 // ── New user ──────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ router.post('/new', async (req: Request, res: Response) => {
         [cleanGithub, cleanSlack, user.username],
       );
     }
-    if (cleanGithub) triggerGithubInvite(cleanGithub);
+    if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined);
   }
 
   res.render('admin/users/new-result', {
@@ -189,15 +189,5 @@ router.post('/new', async (req: Request, res: Response) => {
     tempPassword: ldapResult.tempPassword,
   });
 });
-
-// ── Helpers ───────────────────────────────────────────────────────
-function triggerGithubInvite(githubUsername: string): void {
-  const base = process.env.GITHUB_APP_URL ?? 'http://github-app:3001';
-  fetch(`${base}/invite`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ githubUsername }),
-  }).catch((err) => console.warn(`[admin] GitHub invite trigger failed for ${githubUsername}:`, err));
-}
 
 export default router;

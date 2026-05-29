@@ -1,0 +1,101 @@
+{% extends "layout.njk" %}
+{% block title %}Organizations — System{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "system/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <h2>Organizations</h2>
+        <p class="text-muted" style="margin:0;font-size:.9rem">
+          Manage organizations and their LDAP group → role mappings.
+        </p>
+      </div>
+    </div>
+
+    <div class="layout-split">
+
+      {# Left: org list #}
+      <div>
+        {% if orgs.length %}
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Slug</th>
+                <th>Members</th>
+                <th>Theme</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for o in orgs %}
+              <tr>
+                <td><strong>{{ o.name }}</strong></td>
+                <td><code>{{ o.slug }}</code></td>
+                <td>{{ o.member_count }}</td>
+                <td>
+                  <form method="POST" action="/system/orgs/{{ o.id }}/theme" style="margin:0;display:flex;gap:.35rem;align-items:center">
+                    <input type="color" name="themeColor"
+                           value="{{ o.theme_color or '#182B49' }}"
+                           style="width:2rem;height:1.6rem;padding:.1rem;border:1px solid var(--border);border-radius:4px;cursor:pointer">
+                    <button class="btn btn-ghost btn-sm" type="submit">Set</button>
+                  </form>
+                </td>
+                <td>
+                  <div style="display:flex;gap:.25rem">
+                    <a href="/system/orgs/{{ o.id }}/ldap-mappings" class="btn btn-ghost btn-sm">LDAP Mappings</a>
+                    <form method="POST" action="/system/orgs/{{ o.id }}/delete" style="margin:0"
+                          onsubmit="return confirm('Delete org {{ o.name }}? All projects and mappings will be removed.')">
+                      <button class="btn btn-ghost btn-sm" style="color:var(--danger)">Delete</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted">No organizations yet. Create one on the right.</p>
+        {% endif %}
+      </div>
+
+      {# Right: create form #}
+      <div class="card">
+        <h4>New Organization</h4>
+
+        {% if error %}
+        <div class="alert alert-error" style="margin-bottom:1rem">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="/system/orgs">
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Name</label>
+            <input type="text" name="name" class="form-input" required placeholder="e.g. Engineers for Exploration">
+          </div>
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Slug</label>
+            <input type="text" name="slug" class="form-input" required placeholder="e.g. e4e"
+                   pattern="[a-z0-9-]+" title="Lowercase letters, numbers, and hyphens only">
+            <span class="form-hint">Used in URLs: /org/&lt;slug&gt;/…</span>
+          </div>
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Theme Color <span class="text-muted" style="font-size:.8rem">(header &amp; buttons)</span></label>
+            <div style="display:flex;gap:.5rem;align-items:center">
+              <input type="color" name="themeColor" value="#182B49"
+                     style="width:2.5rem;height:2rem;padding:.15rem;border:1px solid var(--border);border-radius:4px;cursor:pointer">
+              <span class="form-hint" style="margin:0">Default: UCSD Navy</span>
+            </div>
+          </div>
+          <button class="btn btn-primary" type="submit">Create Organization</button>
+        </form>
+      </div>
+
+    </div>
+
+  </main>
+</div>
+{% endblock %}

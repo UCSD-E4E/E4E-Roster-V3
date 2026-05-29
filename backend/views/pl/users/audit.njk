@@ -1,4 +1,5 @@
 {% extends "layout.njk" %}
+{% from "_macros.njk" import back_link %}
 {% block title %}Audit Log — {{ user.username }} — {{ project.name }}{% endblock %}
 {% block body %}
 <div class="app-layout">
@@ -7,7 +8,7 @@
 
     <div class="page-header">
       <div>
-        <a href="/pl/projects/{{ project.id }}/users" style="font-size:.85rem;color:var(--text-muted)">&larr; {{ project.name }}</a>
+        {{ back_link(orgBase + '/pl/projects/' + project.id + '/users', project.name) }}
         <h2 style="margin:.25rem 0 0">Audit Log — {{ user.first_name }} {{ user.last_name }}</h2>
         <p class="text-muted" style="margin:0;font-size:.9rem"><code>{{ user.username }}</code></p>
       </div>

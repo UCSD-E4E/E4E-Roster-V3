@@ -1,0 +1,87 @@
+{% extends "layout.njk" %}
+{% from "_macros.njk" import back_link %}
+{% block title %}LDAP Mappings — {{ org.name }} — System{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "system/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        {{ back_link('/system/orgs', 'Organizations') }}
+        <h2 style="margin:.25rem 0 0">LDAP Mappings — {{ org.name }}</h2>
+        <p class="text-muted" style="margin:0;font-size:.9rem">
+          Define which LDAP groups grant which role in <strong>{{ org.name }}</strong>.
+          Users in multiple groups get the highest-priority role.
+        </p>
+      </div>
+    </div>
+
+    <div class="layout-split">
+
+      {# Left: current mappings #}
+      <div>
+        {% if mappings.length %}
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>LDAP Group</th>
+                <th>Role</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in mappings %}
+              <tr>
+                <td><code>{{ m.ldap_group }}</code></td>
+                <td>
+                  <span class="tag tag-{{ m.role }}">{{ m.role | replace('_', ' ') }}</span>
+                </td>
+                <td>
+                  <form method="POST" action="/system/orgs/{{ org.id }}/ldap-mappings/{{ m.id }}/delete" style="margin:0">
+                    <button class="btn btn-ghost btn-sm" style="color:var(--danger)">Remove</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-muted">No LDAP mappings yet. Users won't have automatic org membership until at least one mapping is defined.</p>
+        {% endif %}
+      </div>
+
+      {# Right: add mapping #}
+      <div class="card">
+        <h4>Add LDAP Mapping</h4>
+
+        {% if error %}
+        <div class="alert alert-error" style="margin-bottom:1rem">{{ error }}</div>
+        {% endif %}
+
+        <form method="POST" action="/system/orgs/{{ org.id }}/ldap-mappings">
+          <div style="margin-bottom:1rem">
+            <label class="form-label">LDAP Group CN</label>
+            <input type="text" name="ldapGroup" class="form-input" required autocomplete="off"
+                   placeholder="e.g. e4e-members">
+            <span class="form-hint">The exact LDAP common name as it appears in the OIDC token.</span>
+          </div>
+          <div style="margin-bottom:1rem">
+            <label class="form-label">Role</label>
+            <select name="role" class="form-input" required>
+              <option value="member">member</option>
+              <option value="project_lead">project_lead</option>
+              <option value="org_admin">org_admin</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" type="submit">Add Mapping</button>
+        </form>
+      </div>
+
+    </div>
+
+  </main>
+</div>
+{% endblock %}
