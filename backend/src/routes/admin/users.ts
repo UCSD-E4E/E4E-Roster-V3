@@ -12,19 +12,27 @@ const router = Router();
 // ── User list ─────────────────────────────────────────────────────
 router.get('/', async (_req: Request, res: Response) => {
   const orgId = res.locals.currentOrg?.id;
-  const { rows: users } = await db.query(
-    `SELECT u.username, u.first_name, u.last_name, u.email, u.role,
-            TO_CHAR(u.expiry_date, 'YYYY-MM-DD') AS expiry_date,
-            u.disabled, u.ldap_groups, u.github_username, u.slack_username, u.last_synced_at
-     FROM users u
-     JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $1
-     ORDER BY u.last_name, u.first_name`,
-    [orgId],
-  );
-  const { rows: [{ count }] } = await db.query(
-    'SELECT COUNT(*) FROM user_orgs WHERE org_id = $1', [orgId],
-  );
-  res.render('admin/users/index', { users, totalCount: count });
+  const [{ rows: users }, { rows: [{ count }] }, { rows: orgGroupRows }] = await Promise.all([
+    db.query(
+      `SELECT u.username, u.first_name, u.last_name, u.email, u.role,
+              TO_CHAR(u.expiry_date, 'YYYY-MM-DD') AS expiry_date,
+              u.disabled, u.ldap_groups, u.github_username, u.slack_username, u.last_synced_at
+       FROM users u
+       JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $1
+       ORDER BY u.last_name, u.first_name`,
+      [orgId],
+    ),
+    db.query('SELECT COUNT(*) FROM user_orgs WHERE org_id = $1', [orgId]),
+    db.query<{ ldap_group: string }>('SELECT ldap_group FROM org_groups WHERE org_id = $1', [orgId]),
+  ]);
+
+  const orgGroupSet = new Set(orgGroupRows.map(r => r.ldap_group));
+  const filteredUsers = users.map(u => ({
+    ...u,
+    ldap_groups: ((u.ldap_groups as string[]) ?? []).filter(g => orgGroupSet.has(g)),
+  }));
+
+  res.render('admin/users/index', { users: filteredUsers, totalCount: count });
 });
 
 // ── Sync ──────────────────────────────────────────────────────────
