@@ -1,0 +1,123 @@
+{% extends "layout.njk" %}
+{% block title %}Audit Log — System{% endblock %}
+{% block body %}
+<div class="app-layout">
+  {% include "system/_header.njk" %}
+  <main class="app-main">
+
+    <div class="page-header">
+      <div>
+        <h2>Audit Log</h2>
+        <p class="text-muted" style="margin:0;font-size:.9rem">
+          Showing up to 1000 entries from the last {{ days }} day{{ 's' if days != 1 }}.
+        </p>
+      </div>
+      <form method="GET" action="/system/audit" style="display:flex;gap:.5rem;align-items:center">
+        <label style="font-size:.9rem;color:var(--text-muted)">Last</label>
+        <select name="days" class="form-input" style="width:auto" onchange="this.form.submit()">
+          <option value="1"  {{ 'selected' if days == 1  }}>1 day</option>
+          <option value="7"  {{ 'selected' if days == 7  }}>7 days</option>
+          <option value="14" {{ 'selected' if days == 14 }}>14 days</option>
+          <option value="30" {{ 'selected' if days == 30 }}>30 days</option>
+          <option value="90" {{ 'selected' if days == 90 }}>90 days</option>
+        </select>
+      </form>
+    </div>
+
+    {% if logs.length %}
+    <div class="table-wrapper">
+      <table class="data-table" style="text-align:left">
+        <thead>
+          <tr>
+            <th style="padding-right:1.5rem">Time</th>
+            <th style="padding-right:1.5rem">Actor</th>
+            <th style="padding-right:1.5rem">Action</th>
+            <th style="padding-right:1.5rem">Target</th>
+            <th style="padding-right:1.5rem">Org</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td style="white-space:nowrap;font-size:.85rem;color:var(--text-muted);padding-right:1.5rem">
+              {{ log.created_at }}
+            </td>
+            <td style="padding-right:1.5rem"><code style="font-size:.85rem">{{ log.actor }}</code></td>
+            <td style="padding-right:1.5rem">
+              <span class="tag" style="
+                {% if 'delete' in log.action or 'fail' in log.action %}background:var(--danger);color:#fff;
+                {% elif 'create' in log.action or 'add' in log.action %}background:var(--success, #16a34a);color:#fff;
+                {% else %}background:var(--surface-2);
+                {% endif %}
+              ">{{ log.action | replace('_', ' ') }}</span>
+            </td>
+            <td style="padding-right:1.5rem">
+              {% if log.target_username %}
+              <code style="font-size:.85rem">{{ log.target_username }}</code>
+              {% else %}—{% endif %}
+            </td>
+            <td style="padding-right:1.5rem">
+              {% if log.org_name %}
+              <a href="/orgs/{{ log.org_slug }}/dashboard" style="font-size:.875rem">{{ log.org_name }}</a>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if log.details %}
+              <button class="btn btn-ghost btn-sm"
+                      style="font-size:.8rem;color:var(--text-muted);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left"
+                      onclick="showDetails(this)"
+                      data-details="{{ log.details | dump | escape }}">
+                {{ log.details | dump | truncate(40, true, '…') }}
+              </button>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted" style="margin-top:2rem">No audit log entries in the last {{ days }} day{{ 's' if days != 1 }}.</p>
+    {% endif %}
+
+  </main>
+</div>
+
+{# ── Details popup ── #}
+<div id="detailsBackdrop" onclick="closeDetails()"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:center;justify-content:center">
+  <div onclick="event.stopPropagation()"
+       style="background:var(--surface,#fff);border-radius:8px;padding:1.5rem;max-width:560px;width:90%;
+              max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.25);position:relative">
+    <button onclick="closeDetails()"
+            style="position:absolute;top:.75rem;right:.75rem;background:none;border:none;font-size:1.2rem;
+                   cursor:pointer;color:var(--text-muted);line-height:1">×</button>
+    <h4 style="margin:0 0 1rem">Details</h4>
+    <pre id="detailsContent"
+         style="margin:0;font-size:.82rem;white-space:pre-wrap;word-break:break-all;
+                background:var(--surface-2,#f4f4f5);padding:1rem;border-radius:6px;line-height:1.5"></pre>
+  </div>
+</div>
+
+<script>
+function showDetails(btn) {
+  try {
+    const raw = JSON.parse(btn.dataset.details);
+    document.getElementById('detailsContent').textContent = JSON.stringify(raw, null, 2);
+  } catch {
+    document.getElementById('detailsContent').textContent = btn.dataset.details;
+  }
+  const backdrop = document.getElementById('detailsBackdrop');
+  backdrop.style.display = 'flex';
+}
+
+function closeDetails() {
+  document.getElementById('detailsBackdrop').style.display = 'none';
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeDetails();
+});
+</script>
+{% endblock %}

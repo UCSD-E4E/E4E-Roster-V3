@@ -6,7 +6,8 @@
       <a href="/system/groups/new">New Group</a>
       <a href="/system/orgs">Organizations</a>
       <a href="/system/local-admins">Local Admins</a>
-      {% if user.orgs.length %}
+      <a href="/system/audit">Audit Log</a>
+      {% if user.orgs and user.orgs.length %}
         <a href="/orgs">My Orgs</a>
       {% endif %}
       <span class="nav-user">{{ user.name or user.username }}</span>

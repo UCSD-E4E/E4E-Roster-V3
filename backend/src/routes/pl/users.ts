@@ -151,6 +151,12 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
 
   if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined);
 
+  await db.query(
+    `INSERT INTO audit_log (actor, action, target_username, details, org_id)
+     VALUES ($1, 'pl_edit_user', $2, $3, $4)`,
+    [req.user?.username, username, JSON.stringify({ projectId, groups: mergedGroups }), res.locals.currentOrg?.id ?? null],
+  );
+
   res.redirect(plBase(res, projectId));
 });
 
@@ -208,6 +214,12 @@ router.post('/add', async (req: Request, res: Response) => {
   await db.query(
     `UPDATE users SET ldap_groups = $1, updated_at = NOW() WHERE username = $2`,
     [mergedGroups, username],
+  );
+
+  await db.query(
+    `INSERT INTO audit_log (actor, action, target_username, details, org_id)
+     VALUES ($1, 'pl_add_to_project', $2, $3, $4)`,
+    [req.user?.username, username, JSON.stringify({ projectId, groups: mergedGroups }), res.locals.currentOrg?.id ?? null],
   );
 
   res.redirect(plBase(res, projectId));
@@ -272,6 +284,12 @@ router.post('/new', async (req: Request, res: Response) => {
     );
     if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined);
   }
+
+  await db.query(
+    `INSERT INTO audit_log (actor, action, target_username, details, org_id)
+     VALUES ($1, 'pl_create_user', $2, $3, $4)`,
+    [req.user?.username, user.username, JSON.stringify({ projectId, ldapStatus: ldapResult.status, email: user.email }), res.locals.currentOrg?.id ?? null],
+  );
 
   res.render('pl/users/new-result', {
     project: res.locals.project,

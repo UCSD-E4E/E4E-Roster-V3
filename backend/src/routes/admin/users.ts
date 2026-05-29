@@ -275,6 +275,17 @@ router.post('/new', async (req: Request, res: Response) => {
     if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined);
   }
 
+  await db.query(
+    `INSERT INTO audit_log (actor, action, target_username, details, org_id)
+     VALUES ($1, 'create_user', $2, $3, $4)`,
+    [
+      req.user?.username ?? 'admin',
+      user.username,
+      JSON.stringify({ ldapStatus: ldapResult.status, role: user.role, email: user.email }),
+      res.locals.currentOrg?.id ?? null,
+    ],
+  );
+
   res.render('admin/users/new-result', {
     user,
     ldapResult,

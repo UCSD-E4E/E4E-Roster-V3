@@ -95,6 +95,16 @@ router.post('/users/new', async (req: Request, res: Response) => {
     if (cleanGithub) triggerGithubInvite(cleanGithub, undefined);
   }
 
+  await db.query(
+    `INSERT INTO audit_log (actor, action, target_username, details)
+     VALUES ($1, 'create_user', $2, $3)`,
+    [
+      req.user?.username ?? 'system-admin',
+      user.username,
+      JSON.stringify({ ldapStatus: ldapResult.status, role: user.role, email: user.email }),
+    ],
+  );
+
   res.render('system/users/new-result', { user, ldapResult, sshResults, tempPassword: ldapResult.tempPassword });
 });
 
@@ -159,6 +169,16 @@ router.post('/users/:username/edit', async (req: Request, res: Response) => {
   );
 
   if (githubUsername?.trim()) triggerGithubInvite(githubUsername.trim(), undefined);
+
+  await db.query(
+    `INSERT INTO audit_log (actor, action, target_username, details)
+     VALUES ($1, 'edit_user', $2, $3)`,
+    [
+      req.user?.username ?? 'system-admin',
+      username,
+      JSON.stringify({ role, expiryDate, groups: selectedGroups }),
+    ],
+  );
 
   res.redirect('/system/users');
 });
@@ -229,6 +249,27 @@ router.post('/groups', async (req: Request, res: Response) => {
   }
 
   res.redirect('/system/orgs');
+});
+
+// ── Audit log ────────────────────────────────────────────────────────────────
+
+router.get('/audit', async (req: Request, res: Response) => {
+  const days = Math.min(parseInt((req.query.days as string) || '7', 10) || 7, 90);
+
+  const { rows: logs } = await db.query(
+    `SELECT al.id, al.actor, al.action, al.target_username,
+            al.details,
+            TO_CHAR(al.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+            o.name AS org_name, o.slug AS org_slug
+     FROM audit_log al
+     LEFT JOIN orgs o ON o.id = al.org_id
+     WHERE al.created_at >= NOW() - ($1 || ' days')::INTERVAL
+     ORDER BY al.created_at DESC
+     LIMIT 1000`,
+    [days],
+  );
+
+  res.render('system/audit', { logs, days });
 });
 
 // ── Local admin management ────────────────────────────────────────────────────
