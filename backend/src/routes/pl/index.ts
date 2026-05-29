@@ -15,6 +15,8 @@ router.get('/projects', async (req: Request, res: Response) => {
 
   let projects: { id: number; name: string; description: string | null; member_count: string }[];
 
+  const orgId = res.locals.currentOrg?.id;
+
   if (isAdmin) {
     ({ rows: projects } = await db.query(
       `SELECT p.id, p.name, p.description,
@@ -22,7 +24,9 @@ router.get('/projects', async (req: Request, res: Response) => {
        FROM projects p
        LEFT JOIN project_ldap_groups plg ON plg.project_id = p.id
        LEFT JOIN users u ON plg.ldap_group = ANY(u.ldap_groups)
+       WHERE p.org_id = $1
        GROUP BY p.id ORDER BY p.name`,
+      [orgId],
     ));
   } else {
     if (userGroups.length === 0) return res.render('pl/projects', { projects: [] });
