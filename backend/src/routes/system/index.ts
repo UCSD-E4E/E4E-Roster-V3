@@ -185,7 +185,7 @@ router.post('/users/:username/edit', async (req: Request, res: Response) => {
 
 // ── Group management ──────────────────────────────────────────────────────────
 
-router.get('/groups/new', async (_req: Request, res: Response) => {
+router.get('/groups/new', async (req: Request, res: Response) => {
   async function fetchJSON(url: string, timeoutMs = 2000): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -207,7 +207,7 @@ router.get('/groups/new', async (_req: Request, res: Response) => {
     orgs,
     teams:    Array.isArray(teamsRes)    ? teamsRes    as { slug: string; name: string }[] : [],
     channels: Array.isArray(channelsRes) ? channelsRes as { id: string; name: string }[]  : [],
-    error: undefined,
+    error: req.query.error as string | undefined,
   });
 });
 
