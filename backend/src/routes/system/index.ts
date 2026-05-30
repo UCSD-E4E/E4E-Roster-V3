@@ -413,7 +413,7 @@ router.post('/orgs/:id/ldap-mappings/sync', async (req: Request, res: Response) 
   const rolePriority: Record<string, number> = { org_admin: 3, project_lead: 2, member: 1 };
   const userRoles = new Map<string, string>();
 
-  for (const { ldap_group, role } of mappings) {
+  for (const { ldap_group, role } of mappings.filter(m => m.role !== 'utility')) {
     const { rows: users } = await db.query<{ username: string }>(
       `SELECT username FROM users WHERE $1 = ANY(ldap_groups)`,
       [ldap_group],

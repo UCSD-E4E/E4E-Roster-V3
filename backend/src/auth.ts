@@ -63,12 +63,14 @@ async function buildOrgMemberships(
   const allMappings = await getAllOrgLdapMappings();
 
   // Role priority: org_admin > project_lead > member
+  // utility groups are tracked but intentionally excluded — they do not grant org membership.
   const rolePriority: Record<OrgRole, number> = { org_admin: 3, project_lead: 2, member: 1 };
 
   // Determine the highest role the user qualifies for in each org via LDAP groups
   const ldapDerived = new Map<number, OrgRole>();
   for (const mapping of allMappings) {
     if (!ldapGroups.includes(mapping.ldap_group)) continue;
+    if (mapping.role === 'utility') continue;
     const role = mapping.role as OrgRole;
     const existing = ldapDerived.get(mapping.org_id);
     if (!existing || rolePriority[role] > rolePriority[existing]) {

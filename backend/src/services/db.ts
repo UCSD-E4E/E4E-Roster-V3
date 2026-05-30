@@ -155,6 +155,18 @@ export async function runMigrations(): Promise<void> {
     await client.query(`ALTER TABLE group_mappings ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES orgs(id)`);
     await client.query(`ALTER TABLE audit_log      ADD COLUMN IF NOT EXISTS org_id INTEGER REFERENCES orgs(id)`);
 
+    // ── Expand org_ldap_group_mappings role to include 'utility' ─────────
+    // utility = group is tracked in the org but does NOT grant membership.
+    await client.query(`
+      ALTER TABLE org_ldap_group_mappings
+        DROP CONSTRAINT IF EXISTS org_ldap_group_mappings_role_check
+    `);
+    await client.query(`
+      ALTER TABLE org_ldap_group_mappings
+        ADD CONSTRAINT org_ldap_group_mappings_role_check
+        CHECK (role IN ('org_admin', 'project_lead', 'member', 'utility'))
+    `);
+
     // ── Explicit LDAP group → org ownership ──────────────────────────────
     // Tracks which groups are visible/manageable within an org's admin panel.
     // Populated when an org admin creates a group, or a system admin assigns one.
