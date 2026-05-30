@@ -29,14 +29,19 @@
         <h4 style="margin:0 0 1rem">Optional Assignments</h4>
 
         <div class="form-group">
-          <label for="orgId">Organization</label>
-          <select id="orgId" name="orgId">
-            <option value="">— none —</option>
+          <label>Organizations</label>
+          {% if orgs.length %}
+          <div class="checkbox-grid">
             {% for o in orgs %}
-            <option value="{{ o.id }}">{{ o.name }}</option>
+            <label class="checkbox-label">
+              <input type="checkbox" name="orgIds" value="{{ o.id }}"> {{ o.name }}
+            </label>
             {% endfor %}
-          </select>
-          <span class="form-hint">Makes this group visible in the org's Group Management page.</span>
+          </div>
+          {% else %}
+          <p class="form-hint">No organizations configured yet.</p>
+          {% endif %}
+          <span class="form-hint">Makes this group visible in the selected orgs' Group Management pages.</span>
         </div>
 
         <div class="form-group">

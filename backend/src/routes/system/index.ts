@@ -212,8 +212,9 @@ router.get('/groups/new', async (_req: Request, res: Response) => {
 });
 
 router.post('/groups', async (req: Request, res: Response) => {
-  const { groupName, orgId, projectId, githubTeamSlug, githubTeamName, slackChannelId, slackChannelName } =
+  const { groupName, projectId, githubTeamSlug, githubTeamName, slackChannelId, slackChannelName } =
     req.body as Record<string, string>;
+  const orgIds: number[] = [req.body.orgIds ?? []].flat().map(Number).filter(Boolean);
 
   const name = groupName?.trim();
   if (!name) return res.redirect('/system/groups/new?error=Group+name+is+required');
@@ -229,10 +230,10 @@ router.post('/groups', async (req: Request, res: Response) => {
     [actor, 'create_ldap_group', JSON.stringify({ groupName: name, alreadyExisted: result.status === 'already_exists' })],
   );
 
-  if (orgId) {
+  for (const id of orgIds) {
     await db.query(
       'INSERT INTO org_groups (org_id, ldap_group) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [parseInt(orgId, 10), name],
+      [id, name],
     );
   }
 
