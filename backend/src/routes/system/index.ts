@@ -186,9 +186,6 @@ router.post('/users/:username/edit', async (req: Request, res: Response) => {
 // ── Group management ──────────────────────────────────────────────────────────
 
 router.get('/groups/new', async (_req: Request, res: Response) => {
-  const { rows: projects } = await db.query<{ id: number; name: string }>(
-    'SELECT id, name FROM projects ORDER BY name',
-  );
   async function fetchJSON(url: string, timeoutMs = 2000): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -199,20 +196,23 @@ router.get('/groups/new', async (_req: Request, res: Response) => {
       clearTimeout(timer);
     }
   }
-  const [teamsRes, channelsRes] = await Promise.allSettled([
-    fetchJSON(`${process.env.GITHUB_APP_URL ?? 'http://github-app:3001'}/teams`),
-    fetchJSON(`${process.env.SLACK_BOT_URL  ?? 'http://slackbot:3002'}/channels`),
+  const [{ rows: projects }, { rows: orgs }, teamsRes, channelsRes] = await Promise.all([
+    db.query<{ id: number; name: string }>('SELECT id, name FROM projects ORDER BY name'),
+    db.query<{ id: number; name: string }>('SELECT id, name FROM orgs ORDER BY name'),
+    fetchJSON(`${process.env.GITHUB_APP_URL ?? 'http://github-app:3001'}/teams`).catch(() => []),
+    fetchJSON(`${process.env.SLACK_BOT_URL  ?? 'http://slackbot:3002'}/channels`).catch(() => []),
   ]);
   res.render('system/groups/new', {
     projects,
-    teams:    teamsRes.status    === 'fulfilled' ? (teamsRes.value    as { slug: string; name: string }[]) : [],
-    channels: channelsRes.status === 'fulfilled' ? (channelsRes.value as { id: string; name: string }[])  : [],
+    orgs,
+    teams:    Array.isArray(teamsRes)    ? teamsRes    as { slug: string; name: string }[] : [],
+    channels: Array.isArray(channelsRes) ? channelsRes as { id: string; name: string }[]  : [],
     error: undefined,
   });
 });
 
 router.post('/groups', async (req: Request, res: Response) => {
-  const { groupName, projectId, githubTeamSlug, githubTeamName, slackChannelId, slackChannelName } =
+  const { groupName, orgId, projectId, githubTeamSlug, githubTeamName, slackChannelId, slackChannelName } =
     req.body as Record<string, string>;
 
   const name = groupName?.trim();
@@ -228,6 +228,13 @@ router.post('/groups', async (req: Request, res: Response) => {
     'INSERT INTO audit_log (actor, action, details) VALUES ($1, $2, $3)',
     [actor, 'create_ldap_group', JSON.stringify({ groupName: name, alreadyExisted: result.status === 'already_exists' })],
   );
+
+  if (orgId) {
+    await db.query(
+      'INSERT INTO org_groups (org_id, ldap_group) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [parseInt(orgId, 10), name],
+    );
+  }
 
   if (projectId) {
     await db.query(

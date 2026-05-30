@@ -29,6 +29,17 @@
         <h4 style="margin:0 0 1rem">Optional Assignments</h4>
 
         <div class="form-group">
+          <label for="orgId">Organization</label>
+          <select id="orgId" name="orgId">
+            <option value="">— none —</option>
+            {% for o in orgs %}
+            <option value="{{ o.id }}">{{ o.name }}</option>
+            {% endfor %}
+          </select>
+          <span class="form-hint">Makes this group visible in the org's Group Management page.</span>
+        </div>
+
+        <div class="form-group">
           <label for="projectId">Project</label>
           <select id="projectId" name="projectId">
             <option value="">— none —</option>
