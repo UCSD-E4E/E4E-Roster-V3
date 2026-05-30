@@ -15,7 +15,20 @@
           Users in multiple groups get the highest-priority role.
         </p>
       </div>
+      <form method="POST" action="/system/orgs/{{ org.id }}/ldap-mappings/sync">
+        <button class="btn btn-secondary" type="submit">Sync Members</button>
+      </form>
     </div>
+
+    {% if synced %}
+    <div class="alert alert-success" style="margin-bottom:1rem">
+      Sync complete — {{ synced }} user{{ 's' if synced != '1' }} added or updated in {{ org.name }}.
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-error" style="margin-bottom:1rem">{{ error }}</div>
+    {% endif %}
 
     <div class="layout-split">
 
@@ -57,26 +70,33 @@
       <div class="card">
         <h4>Add LDAP Mapping</h4>
 
-        {% if error %}
-        <div class="alert alert-error" style="margin-bottom:1rem">{{ error }}</div>
-        {% endif %}
-
         <form method="POST" action="/system/orgs/{{ org.id }}/ldap-mappings">
           <div style="margin-bottom:1rem">
-            <label class="form-label">LDAP Group CN</label>
-            <input type="text" name="ldapGroup" class="form-input" required autocomplete="off"
-                   placeholder="e.g. e4e-members">
-            <span class="form-hint">The exact LDAP common name as it appears in the OIDC token.</span>
+            <label class="form-label">LDAP Group</label>
+            {% if availableGroups.length %}
+            <div class="checkbox-grid" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);padding:.5rem">
+              {% for g in availableGroups %}
+              <label class="checkbox-label">
+                <input type="radio" name="ldapGroup" value="{{ g }}" required> {{ g }}
+              </label>
+              {% endfor %}
+            </div>
+            <span class="form-hint">Already-mapped groups are hidden.</span>
+            {% else %}
+            <p class="form-hint">All available LDAP groups are already mapped, or LDAP is unreachable.</p>
+            {% endif %}
           </div>
           <div style="margin-bottom:1rem">
             <label class="form-label">Role</label>
             <select name="role" class="form-input" required>
-              <option value="member">member</option>
-              <option value="project_lead">project_lead</option>
-              <option value="org_admin">org_admin</option>
+              <option value="member">Member</option>
+              <option value="project_lead">Project Lead</option>
+              <option value="org_admin">Org Admin</option>
             </select>
           </div>
-          <button class="btn btn-primary" type="submit">Add Mapping</button>
+          <button class="btn btn-primary" type="submit" {% if not availableGroups.length %}disabled{% endif %}>
+            Add Mapping
+          </button>
         </form>
       </div>
 

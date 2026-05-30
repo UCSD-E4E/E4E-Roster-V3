@@ -363,15 +363,18 @@ router.post('/orgs/:id/delete', async (req: Request, res: Response) => {
 
 router.get('/orgs/:id/ldap-mappings', async (req: Request, res: Response) => {
   const orgId = parseInt(req.params.id, 10);
-  const [{ rows: [org] }, { rows: mappings }] = await Promise.all([
+  const [{ rows: [org] }, { rows: mappings }, allGroups] = await Promise.all([
     db.query('SELECT id, slug, name FROM orgs WHERE id = $1', [orgId]),
     db.query(
       'SELECT id, ldap_group, role FROM org_ldap_group_mappings WHERE org_id = $1 ORDER BY role, ldap_group',
       [orgId],
     ),
+    ldap.listGroups().catch(() => []),
   ]);
   if (!org) return res.status(404).send('Org not found');
-  res.render('system/ldap-mappings', { org, mappings, error: req.query['error'] });
+  const mappedGroupNames = new Set(mappings.map((m: { ldap_group: string }) => m.ldap_group));
+  const availableGroups = allGroups.filter(g => !mappedGroupNames.has(g));
+  res.render('system/ldap-mappings', { org, mappings, availableGroups, error: req.query['error'], synced: req.query['synced'] });
 });
 
 router.post('/orgs/:id/ldap-mappings', async (req: Request, res: Response) => {
@@ -395,6 +398,49 @@ router.post('/orgs/:id/ldap-mappings', async (req: Request, res: Response) => {
 router.post('/orgs/:id/ldap-mappings/:mappingId/delete', async (req: Request, res: Response) => {
   await db.query('DELETE FROM org_ldap_group_mappings WHERE id = $1', [req.params.mappingId]);
   res.redirect(`/system/orgs/${req.params.id}/ldap-mappings`);
+});
+
+router.post('/orgs/:id/ldap-mappings/sync', async (req: Request, res: Response) => {
+  const orgId = parseInt(req.params.id, 10);
+
+  const { rows: mappings } = await db.query<{ ldap_group: string; role: string }>(
+    'SELECT ldap_group, role FROM org_ldap_group_mappings WHERE org_id = $1',
+    [orgId],
+  );
+  if (!mappings.length) return res.redirect(`/system/orgs/${orgId}/ldap-mappings`);
+
+  // For each user whose ldap_groups overlap with any mapped group, determine their highest role
+  const rolePriority: Record<string, number> = { org_admin: 3, project_lead: 2, member: 1 };
+  const userRoles = new Map<string, string>();
+
+  for (const { ldap_group, role } of mappings) {
+    const { rows: users } = await db.query<{ username: string }>(
+      `SELECT username FROM users WHERE $1 = ANY(ldap_groups)`,
+      [ldap_group],
+    );
+    for (const { username } of users) {
+      const current = userRoles.get(username);
+      if (!current || rolePriority[role] > rolePriority[current]) {
+        userRoles.set(username, role);
+      }
+    }
+  }
+
+  for (const [username, role] of userRoles) {
+    await db.query(
+      `INSERT INTO user_orgs (username, org_id, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (username, org_id) DO UPDATE SET role = EXCLUDED.role`,
+      [username, orgId, role],
+    );
+  }
+
+  await db.query(
+    `INSERT INTO audit_log (actor, action, details, org_id) VALUES ($1, 'sync_org_membership', $2, $3)`,
+    [req.user?.username ?? 'system-admin', JSON.stringify({ usersAdded: userRoles.size }), orgId],
+  );
+
+  res.redirect(`/system/orgs/${orgId}/ldap-mappings?synced=${userRoles.size}`);
 });
 
 export default router;
