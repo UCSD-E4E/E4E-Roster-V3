@@ -7,13 +7,23 @@
   <main class="app-main">
 
     <div class="page-header">
-      <div>
-        {{ back_link('/system/orgs', 'Organizations') }}
-        <h2 style="margin:.25rem 0 0">LDAP Mappings — {{ org.name }}</h2>
-        <p class="text-muted" style="margin:0;font-size:.9rem">
-          Define which LDAP groups grant which role in <strong>{{ org.name }}</strong>.
-          Users in multiple groups get the highest-priority role.
-        </p>
+      <div style="display:flex;align-items:flex-start;gap:1rem">
+        {% if org.theme_color %}
+        <div style="width:4px;border-radius:2px;background:{{ org.theme_color }};align-self:stretch;flex-shrink:0;margin-top:.25rem"></div>
+        {% endif %}
+        <div>
+          {{ back_link('/system/orgs', 'Organizations') }}
+          <h2 style="margin:.25rem 0 0;display:flex;align-items:center;gap:.6rem">
+            {% if org.theme_color %}
+            <span style="display:inline-block;width:.75rem;height:.75rem;border-radius:50%;background:{{ org.theme_color }};flex-shrink:0"></span>
+            {% endif %}
+            LDAP Mappings — {{ org.name }}
+          </h2>
+          <p class="text-muted" style="margin:0;font-size:.9rem">
+            Define which LDAP groups grant which role in <strong>{{ org.name }}</strong>.
+            Users in multiple groups get the highest-priority role.
+          </p>
+        </div>
       </div>
       <form method="POST" action="/system/orgs/{{ org.id }}/ldap-mappings/sync">
         <button class="btn btn-secondary" type="submit">Sync Members</button>
@@ -49,7 +59,15 @@
               <tr>
                 <td><code>{{ m.ldap_group }}</code></td>
                 <td>
-                  <span class="tag tag-{{ m.role }}">{{ m.role | replace('_', ' ') }}</span>
+                  <form method="POST" action="/system/orgs/{{ org.id }}/ldap-mappings/{{ m.id }}/role" style="margin:0">
+                    <select name="role" class="form-input" style="padding:.2rem .4rem;font-size:.85rem;width:auto"
+                            onchange="this.form.submit()">
+                      <option value="member"       {{ 'selected' if m.role == 'member' }}>Member</option>
+                      <option value="project_lead" {{ 'selected' if m.role == 'project_lead' }}>Project Lead</option>
+                      <option value="org_admin"    {{ 'selected' if m.role == 'org_admin' }}>Org Admin</option>
+                      <option value="utility"      {{ 'selected' if m.role == 'utility' }}>Utility</option>
+                    </select>
+                  </form>
                 </td>
                 <td>
                   <form method="POST" action="/system/orgs/{{ org.id }}/ldap-mappings/{{ m.id }}/delete" style="margin:0">

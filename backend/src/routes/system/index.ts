@@ -364,7 +364,7 @@ router.post('/orgs/:id/delete', async (req: Request, res: Response) => {
 router.get('/orgs/:id/ldap-mappings', async (req: Request, res: Response) => {
   const orgId = parseInt(req.params.id, 10);
   const [{ rows: [org] }, { rows: mappings }, allGroups] = await Promise.all([
-    db.query('SELECT id, slug, name FROM orgs WHERE id = $1', [orgId]),
+    db.query('SELECT id, slug, name, theme_color FROM orgs WHERE id = $1', [orgId]),
     db.query(
       'SELECT id, ldap_group, role FROM org_ldap_group_mappings WHERE org_id = $1 ORDER BY role, ldap_group',
       [orgId],
@@ -393,6 +393,15 @@ router.post('/orgs/:id/ldap-mappings', async (req: Request, res: Response) => {
     [orgId, ldapGroup.trim()],
   );
   res.redirect(`/system/orgs/${orgId}/ldap-mappings`);
+});
+
+router.post('/orgs/:id/ldap-mappings/:mappingId/role', async (req: Request, res: Response) => {
+  const { role } = req.body as { role: string };
+  await db.query(
+    'UPDATE org_ldap_group_mappings SET role = $1 WHERE id = $2',
+    [role, req.params.mappingId],
+  );
+  res.redirect(`/system/orgs/${req.params.id}/ldap-mappings`);
 });
 
 router.post('/orgs/:id/ldap-mappings/:mappingId/delete', async (req: Request, res: Response) => {
