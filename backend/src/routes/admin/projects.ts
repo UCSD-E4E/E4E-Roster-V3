@@ -1,6 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../../services/db';
-import { listGroups } from '../../services/ldap';
 
 const router = Router();
 // requireOrgAdmin applied at admin/index.ts level
@@ -47,15 +46,21 @@ async function requireProjectOwnership(req: Request, res: Response, next: NextFu
 }
 
 router.get('/:id', requireProjectOwnership, async (_req: Request, res: Response) => {
-  const { rows: mappedGroups } = await db.query<{ ldap_group: string }>(
-    'SELECT ldap_group FROM project_ldap_groups WHERE project_id = $1 ORDER BY ldap_group',
-    [res.locals.project.id],
-  );
-  const allGroups = await listGroups().catch(() => []);
+  const orgId = res.locals.currentOrg?.id;
+  const [{ rows: mappedGroups }, { rows: orgGroupRows }] = await Promise.all([
+    db.query<{ ldap_group: string }>(
+      'SELECT ldap_group FROM project_ldap_groups WHERE project_id = $1 ORDER BY ldap_group',
+      [res.locals.project.id],
+    ),
+    db.query<{ ldap_group: string }>(
+      'SELECT ldap_group FROM org_groups WHERE org_id = $1 ORDER BY ldap_group',
+      [orgId],
+    ),
+  ]);
   res.render('admin/projects/detail', {
     project: res.locals.project,
     mapped: mappedGroups.map((r) => r.ldap_group),
-    allGroups,
+    allGroups: orgGroupRows.map((r) => r.ldap_group),
   });
 });
 

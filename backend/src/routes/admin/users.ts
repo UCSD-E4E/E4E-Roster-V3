@@ -210,8 +210,12 @@ router.post('/add', async (req: Request, res: Response) => {
 
 // ── New user ──────────────────────────────────────────────────────
 router.get('/new', async (_req: Request, res: Response) => {
-  const groups = await ldap.listGroups().catch(() => []);
-  res.render('admin/users/new', { groups });
+  const orgId = res.locals.currentOrg?.id;
+  const { rows } = await db.query<{ ldap_group: string }>(
+    'SELECT ldap_group FROM org_groups WHERE org_id = $1 ORDER BY ldap_group',
+    [orgId],
+  );
+  res.render('admin/users/new', { groups: rows.map(r => r.ldap_group) });
 });
 
 router.post('/new', async (req: Request, res: Response) => {
