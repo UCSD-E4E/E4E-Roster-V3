@@ -26,25 +26,23 @@
 
     {% if logs.length %}
     <div class="table-wrapper">
-      <table class="data-table" style="text-align:left">
+      <table class="data-table">
         <thead>
           <tr>
-            <th style="padding-right:1.5rem">Time</th>
-            <th style="padding-right:1.5rem">Actor</th>
-            <th style="padding-right:1.5rem">Action</th>
-            <th style="padding-right:1.5rem">Target</th>
-            <th style="padding-right:1.5rem">Org</th>
+            <th>Time</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Target</th>
+            <th>Org</th>
             <th>Details</th>
           </tr>
         </thead>
         <tbody>
           {% for log in logs %}
           <tr>
-            <td style="white-space:nowrap;font-size:.85rem;color:var(--text-muted);padding-right:1.5rem">
-              {{ log.created_at }}
-            </td>
-            <td style="padding-right:1.5rem"><code style="font-size:.85rem">{{ log.actor }}</code></td>
-            <td style="padding-right:1.5rem">
+            <td style="color:var(--text-muted)">{{ log.created_at }}</td>
+            <td><code style="font-size:.85rem">{{ log.actor }}</code></td>
+            <td>
               <span class="tag" style="
                 {% if 'delete' in log.action or 'fail' in log.action %}background:var(--danger);color:#fff;
                 {% elif 'create' in log.action or 'add' in log.action %}background:var(--success, #16a34a);color:#fff;
@@ -52,12 +50,12 @@
                 {% endif %}
               ">{{ log.action | replace('_', ' ') }}</span>
             </td>
-            <td style="padding-right:1.5rem">
+            <td>
               {% if log.target_username %}
               <code style="font-size:.85rem">{{ log.target_username }}</code>
               {% else %}—{% endif %}
             </td>
-            <td style="padding-right:1.5rem">
+            <td>
               {% if log.org_name %}
               <a href="/orgs/{{ log.org_slug }}/dashboard" style="font-size:.875rem">{{ log.org_name }}</a>
               {% else %}—{% endif %}

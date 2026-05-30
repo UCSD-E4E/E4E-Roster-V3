@@ -337,6 +337,42 @@ a:hover { text-decoration: underline; }
 .alert-warn    { background: #FFFBEB; color: #92400E; border: 1px solid #FDE68A; }
 .alert-info    { background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; }
 
+/* ── Data table (used across admin/system views) ─────────────────── */
+.table-wrapper { overflow-x: auto; }
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .9rem;
+  text-align: left;
+}
+
+.data-table th,
+.data-table td {
+  padding: .6rem 1.25rem .6rem 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.data-table th {
+  font-weight: 600;
+  color: var(--text-muted, #6b7280);
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.data-table td:last-child,
+.data-table th:last-child {
+  padding-right: 0;
+}
+
+.data-table tbody tr:hover { background: var(--surface-2, #f9fafb); }
+.data-table .row-disabled { opacity: .5; }
+.data-table tbody tr.row-link { cursor: pointer; }
+.data-table tbody tr.row-link:hover { background: var(--surface-2, #f9fafb); }
+
 /* ── Detail table ────────────────────────── */
 .detail-table { width: 100%; border-collapse: collapse; margin-top: 1rem; font-size: .9rem; }
 .detail-table th, .detail-table td { padding: .5rem .75rem; border-bottom: 1px solid var(--border); text-align: left; }

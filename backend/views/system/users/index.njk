@@ -30,12 +30,12 @@
             <th>Groups</th>
             <th>GitHub</th>
             <th>Slack</th>
-            <th></th>
           </tr>
         </thead>
         <tbody>
           {% for u in users %}
-          <tr class="{{ 'row-disabled' if u.disabled }}">
+          <tr class="row-link {{ 'row-disabled' if u.disabled }}"
+              onclick="window.location='/system/users/{{ u.username }}/edit'">
             <td><code>{{ u.username }}</code></td>
             <td>{{ u.first_name }} {{ u.last_name }}</td>
             <td>{{ u.email }}</td>
@@ -52,9 +52,6 @@
             </td>
             <td>{{ u.github_username or '—' }}</td>
             <td>{{ u.slack_username or '—' }}</td>
-            <td>
-              <a href="/system/users/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit User</a>
-            </td>
           </tr>
           {% endfor %}
         </tbody>

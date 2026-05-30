@@ -38,18 +38,16 @@
         </thead>
         <tbody>
           {% for u in users %}
-          <tr class="{{ 'row-disabled' if u.disabled }}">
+          <tr class="row-link {{ 'row-disabled' if u.disabled }}"
+              onclick="window.location='{{ orgBase }}/pl/projects/{{ project.id }}/users/{{ u.username }}/edit'">
             <td><code>{{ u.username }}</code></td>
             <td>{{ u.first_name }} {{ u.last_name }}</td>
             <td>{{ u.email }}</td>
             <td>{{ u.expiry_date or 'No expiry' }}</td>
             <td>{{ u.github_username or '—' }}</td>
             <td>{{ u.slack_username or '—' }}</td>
-            <td>
-              {{ status_badge(u.disabled) }}
-            </td>
-            <td style="display:flex;gap:.25rem">
-              <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/{{ u.username }}/edit" class="btn btn-ghost btn-sm">Edit</a>
+            <td>{{ status_badge(u.disabled) }}</td>
+            <td onclick="event.stopPropagation()" style="display:flex;gap:.25rem">
               <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/{{ u.username }}/audit" class="btn btn-ghost btn-sm">Log</a>
             </td>
           </tr>
