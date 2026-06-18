@@ -133,18 +133,22 @@ router.get('/users/:username/edit', async (req: Request, res: Response) => {
 
 router.post('/users/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
-  const { role, expiryDate, githubUsername, slackUsername, secondaryEmail, phone, sshKeys } =
+  const { firstName, lastName, email, role, expiryDate, githubUsername, slackUsername, secondaryEmail, phone, sshKeys } =
     req.body as Record<string, string>;
   const selectedGroups: string[] = [req.body.groups ?? []].flat();
   const sshPublicKeys = (sshKeys || '').split('\n').map((k: string) => k.trim()).filter(Boolean);
+  const cleanFirst = firstName?.trim();
+  const cleanLast  = lastName?.trim();
+  const cleanEmail = email?.trim().toLowerCase();
 
-  const [groupResult, expiryResult, sshResult] = await Promise.all([
+  const [profileResult, groupResult, expiryResult, sshResult] = await Promise.all([
+    ldap.updateUserProfile(username, { firstName: cleanFirst, lastName: cleanLast, email: cleanEmail }),
     ldap.updateUserGroups(username, selectedGroups),
     ldap.updateUserExpiry(username, expiryDate || null),
     ldap.setSshKeys(username, sshPublicKeys),
   ]);
 
-  const ldapError = [groupResult, expiryResult, sshResult]
+  const ldapError = [profileResult, groupResult, expiryResult, sshResult]
     .find(r => r.status === 'failed')?.message ?? null;
 
   if (ldapError) {
@@ -160,10 +164,10 @@ router.post('/users/:username/edit', async (req: Request, res: Response) => {
   }
 
   await db.query(
-    `UPDATE users SET role=$1, expiry_date=$2, ldap_groups=$3, github_username=$4,
-                     slack_username=$5, secondary_email=$6, phone=$7, updated_at=NOW()
-     WHERE username=$8`,
-    [role || null, expiryDate || null, selectedGroups,
+    `UPDATE users SET first_name=$1, last_name=$2, email=$3, role=$4, expiry_date=$5, ldap_groups=$6,
+                     github_username=$7, slack_username=$8, secondary_email=$9, phone=$10, updated_at=NOW()
+     WHERE username=$11`,
+    [cleanFirst, cleanLast, cleanEmail, role || null, expiryDate || null, selectedGroups,
      githubUsername?.trim() || null, slackUsername?.trim() || null,
      secondaryEmail?.trim().toLowerCase() || null, phone?.trim() || null, username],
   );
@@ -176,7 +180,7 @@ router.post('/users/:username/edit', async (req: Request, res: Response) => {
     [
       req.user?.username ?? 'system-admin',
       username,
-      JSON.stringify({ role, expiryDate, groups: selectedGroups }),
+      JSON.stringify({ firstName: cleanFirst, lastName: cleanLast, email: cleanEmail, role, expiryDate, groups: selectedGroups }),
     ],
   );
 

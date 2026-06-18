@@ -88,6 +88,14 @@
           {% endif %}
         </div>
 
+        <div class="card" style="margin-top:1rem">
+          <h4>SSH Keys</h4>
+          <label class="form-label">SSH public keys <span class="text-muted" style="font-size:.8rem">(one per line, ed25519 only — replaces existing keys)</span></label>
+          <textarea name="sshKeys" class="form-input" rows="4" autocomplete="off"
+                    placeholder="ssh-ed25519 AAAA...">{% for key in sshPublicKeys %}{{ key }}
+{% endfor %}</textarea>
+        </div>
+
         <div style="margin-top:1rem;display:flex;gap:.5rem">
           <button class="btn btn-primary" type="submit">Save Changes</button>
           <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Cancel</a>

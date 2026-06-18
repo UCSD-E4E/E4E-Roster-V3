@@ -94,10 +94,12 @@ router.get('/:username/edit', async (req: Request, res: Response) => {
   if (user.ldap_groups.includes(adminGroup())) {
     return res.status(403).send('Project leads cannot edit admin users.');
   }
+  const ldapUser = await ldap.getUser(username).catch(() => null);
   res.render('pl/users/edit-user', {
     project: res.locals.project,
     user,
     projectGroups: await projectGroups(projectId),
+    sshPublicKeys: ldapUser?.sshPublicKeys ?? [],
   });
 });
 
@@ -112,16 +114,22 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
     return res.status(403).send('Project leads cannot edit admin users.');
   }
 
-  const { githubUsername, slackUsername, secondaryEmail, phone, disabled } =
+  const { githubUsername, slackUsername, secondaryEmail, phone, disabled, sshKeys } =
     req.body as Record<string, string>;
   const selectedProjectGroups: string[] = [req.body.groups ?? []].flat();
+  const sshPublicKeys = (sshKeys || '').split('\n').map((k: string) => k.trim()).filter(Boolean);
   const projGroups = await projectGroups(projectId);
   const nonProjectGroups = rows[0].ldap_groups.filter((g) => !projGroups.includes(g));
   const mergedGroups = [...new Set([...nonProjectGroups, ...selectedProjectGroups])];
 
-  const groupResult = await ldap.updateUserGroups(username, mergedGroups);
+  const [groupResult, sshResult] = await Promise.all([
+    ldap.updateUserGroups(username, mergedGroups),
+    ldap.setSshKeys(username, sshPublicKeys),
+  ]);
 
-  if (groupResult.status === 'failed') {
+  const ldapError = [groupResult, sshResult].find(r => r.status === 'failed')?.message ?? null;
+
+  if (ldapError) {
     const { rows: userRows } = await db.query(
       `SELECT username, first_name, last_name, email, secondary_email, phone, role,
               TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
@@ -133,7 +141,8 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
       project: res.locals.project,
       user: userRows[0],
       projectGroups: projGroups,
-      error: groupResult.message,
+      sshPublicKeys,
+      error: ldapError,
     });
   }
 
@@ -154,7 +163,7 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   await db.query(
     `INSERT INTO audit_log (actor, action, target_username, details, org_id)
      VALUES ($1, 'pl_edit_user', $2, $3, $4)`,
-    [req.user?.username, username, JSON.stringify({ projectId, groups: mergedGroups }), res.locals.currentOrg?.id ?? null],
+    [req.user?.username, username, JSON.stringify({ projectId, groups: mergedGroups, sshKeyCount: sshPublicKeys.length }), res.locals.currentOrg?.id ?? null],
   );
 
   res.redirect(plBase(res, projectId));

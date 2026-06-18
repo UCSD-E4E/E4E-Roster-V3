@@ -307,6 +307,31 @@ export async function updateUserExpiry(
   }
 }
 
+// Updates the user's name and primary (institutional) email in LDAP.
+// Does NOT change sAMAccountName/username — usernames are immutable once generated.
+// TODO: once the extended attribute strategy is decided (see updateUserLdapFields below),
+// fold secondaryEmail/phone/role/githubUsername/slackId into this function instead of
+// re-enabling updateUserLdapFields as a separate call — one LDAP modify per edit, not two.
+export async function updateUserProfile(
+  username: string,
+  fields: { firstName: string; lastName: string; email: string },
+): Promise<ProvisionResult> {
+  try {
+    return await withClient(async (client) => {
+      const dn = await getUserDN(client, username);
+      if (!dn) return { status: 'failed', message: `User ${username} not found` };
+      await client.modify(dn, [
+        new Change({ operation: 'replace', modification: new Attribute({ type: 'givenName', values: [fields.firstName] }) }),
+        new Change({ operation: 'replace', modification: new Attribute({ type: 'sn', values: [fields.lastName] }) }),
+        new Change({ operation: 'replace', modification: new Attribute({ type: 'mail', values: [fields.email] }) }),
+      ]);
+      return { status: 'success', message: `Updated profile for ${username}` };
+    });
+  } catch (err: unknown) {
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function updateUserGroups(
   username: string,
   groupNames: string[],
@@ -410,7 +435,9 @@ export async function setSshKeys(username: string, publicKeys: string[]): Promis
   }
 }
 
-// TODO: re-enable once extended attribute strategy is decided (Exchange schema vs custom attributes)
+// TODO: re-enable once extended attribute strategy is decided (Exchange schema vs custom attributes).
+// When this happens, merge these fields into updateUserProfile above instead of keeping
+// this as a separate function/call — avoids a second LDAP round-trip per user edit.
 /*
 export async function updateUserLdapFields(
   username: string,
