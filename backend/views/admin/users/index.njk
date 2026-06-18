@@ -77,7 +77,7 @@ async function triggerSync() {
     const data = await res.json();
     status.className = 'alert alert-' + (data.ok ? 'success' : 'error');
     status.textContent = data.ok
-      ? `Sync complete — ${data.synced} users synced.`
+      ? `Sync complete — ${data.synced} users synced` + (data.removed ? `, ${data.removed} removed` : '') + '.'
       : `Sync failed: ${data.message}`;
     status.style.display = '';
     if (data.ok) setTimeout(() => location.reload(), 1000);
