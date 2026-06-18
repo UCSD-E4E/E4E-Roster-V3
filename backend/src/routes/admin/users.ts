@@ -74,10 +74,13 @@ router.get('/:username/edit', async (req: Request, res: Response) => {
 
 router.post('/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
-  const { role, expiryDate, githubUsername, slackUsername, secondaryEmail, phone, sshKeys } =
+  const { firstName, lastName, email, role, expiryDate, githubUsername, slackUsername, secondaryEmail, phone, sshKeys } =
     req.body as Record<string, string>;
   const selectedOrgGroups: string[] = [req.body.groups ?? []].flat();
   const sshPublicKeys = (sshKeys || '').split('\n').map((k: string) => k.trim()).filter(Boolean);
+  const cleanFirst = firstName?.trim();
+  const cleanLast  = lastName?.trim();
+  const cleanEmail = email?.trim().toLowerCase();
 
   // Fetch current user groups and org group list in parallel
   const orgId = res.locals.currentOrg?.id;
@@ -91,13 +94,14 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   const nonOrgGroups = (currentRows[0]?.ldap_groups ?? []).filter(g => !orgGroupSet.has(g));
   const mergedGroups = [...new Set([...nonOrgGroups, ...selectedOrgGroups])];
 
-  const [groupResult, expiryResult, sshResult] = await Promise.all([
+  const [profileResult, groupResult, expiryResult, sshResult] = await Promise.all([
+    ldap.updateUserProfile(username, { firstName: cleanFirst, lastName: cleanLast, email: cleanEmail }),
     ldap.updateUserGroups(username, mergedGroups),
     ldap.updateUserExpiry(username, expiryDate || null),
     ldap.setSshKeys(username, sshPublicKeys),
   ]);
 
-  const ldapError = [groupResult, expiryResult, sshResult]
+  const ldapError = [profileResult, groupResult, expiryResult, sshResult]
     .find(r => r.status === 'failed')?.message ?? null;
 
   if (ldapError) {
@@ -124,16 +128,19 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
 
   await db.query(
     `UPDATE users SET
-       role            = $1,
-       expiry_date     = $2,
-       ldap_groups     = $3,
-       github_username = $4,
-       slack_username  = $5,
-       secondary_email = $6,
-       phone           = $7,
+       first_name      = $1,
+       last_name       = $2,
+       email           = $3,
+       role            = $4,
+       expiry_date     = $5,
+       ldap_groups     = $6,
+       github_username = $7,
+       slack_username  = $8,
+       secondary_email = $9,
+       phone           = $10,
        updated_at      = NOW()
-     WHERE username = $8`,
-    [role || null, expiryDate || null, mergedGroups, cleanGithub, cleanSlack,
+     WHERE username = $11`,
+    [cleanFirst, cleanLast, cleanEmail, role || null, expiryDate || null, mergedGroups, cleanGithub, cleanSlack,
      cleanSecondary, cleanPhone, username],
   );
 
@@ -145,7 +152,7 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
     [
       req.user?.username ?? 'admin',
       username,
-      JSON.stringify({ role, expiryDate, groups: mergedGroups, githubUsername: cleanGithub, slackUsername: cleanSlack }),
+      JSON.stringify({ firstName: cleanFirst, lastName: cleanLast, email: cleanEmail, role, expiryDate, groups: mergedGroups, githubUsername: cleanGithub, slackUsername: cleanSlack }),
       res.locals.currentOrg?.id ?? null,
     ],
   );
