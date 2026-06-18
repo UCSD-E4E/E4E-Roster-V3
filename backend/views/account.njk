@@ -36,6 +36,10 @@
     <div class="alert alert-success" style="max-width:640px;margin-bottom:1rem">Changes saved.</div>
     {% endif %}
 
+    {% if error %}
+    <div class="alert alert-error" style="max-width:640px;margin-bottom:1rem">{{ error }}</div>
+    {% endif %}
+
     {% if not profile %}
     <div class="alert alert-error" style="max-width:640px">
       Your account has not been synced to the roster yet. Contact an admin if this is unexpected.
@@ -78,22 +82,33 @@
       </div>
       {% endif %}
 
-      <div class="card">
-        <h4>Contact Info <span class="text-muted" style="font-size:.85rem;font-weight:normal">(editable)</span></h4>
-        <form method="POST" action="{{ orgBase }}/account">
+      <form method="POST" action="{{ orgBase }}/account">
+        <div class="card">
+          <h4>Contact Info <span class="text-muted" style="font-size:.85rem;font-weight:normal">(editable)</span></h4>
           <div style="margin-bottom:1rem">
             <label class="form-label">Long-term email <span class="text-muted" style="font-size:.8rem">(personal, persists after graduation)</span></label>
             <input type="email" name="secondaryEmail" class="form-input"
                    value="{{ profile.secondary_email or '' }}" placeholder="personal@gmail.com" autocomplete="off">
           </div>
-          <div style="margin-bottom:1.25rem">
+          <div style="margin-bottom:0">
             <label class="form-label">Phone number</label>
             <input type="tel" name="phone" class="form-input"
                    value="{{ profile.phone or '' }}" placeholder="+1 555 000 0000" autocomplete="off">
           </div>
-          <button type="submit" class="btn btn-primary">Save</button>
-        </form>
-      </div>
+        </div>
+
+        {% if not user.isLocalAdmin %}
+        <div class="card" style="margin-top:1rem">
+          <h4>SSH Keys <span class="text-muted" style="font-size:.85rem;font-weight:normal">(editable)</span></h4>
+          <label class="form-label">SSH public keys <span class="text-muted" style="font-size:.8rem">(one per line, ed25519 only — replaces existing keys)</span></label>
+          <textarea name="sshKeys" class="form-input" rows="4" autocomplete="off"
+                    placeholder="ssh-ed25519 AAAA...">{% for key in sshPublicKeys %}{{ key }}
+{% endfor %}</textarea>
+        </div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary" style="margin-top:1rem">Save</button>
+      </form>
     </div>
     {% endif %}
   </main>
