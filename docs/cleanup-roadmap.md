@@ -2,6 +2,14 @@
 
 Status: code review and local build completed on `codex/roster-cleanup-plan` (2026-09-25). Production is still deployed manually on `krg-prod`; the production database and AD restore procedures have not yet been confirmed. This is a staged plan, not authorization to run migrations or deploy.
 
+## Local verification
+
+- `npm ci --no-audit --no-fund` and `npm run build` pass in `backend/`.
+- All 36 Nunjucks templates compile. The edited add/result templates render with organization-scoped links.
+- The compiled Express app serves `/login`, `/local-login`, and `/static/css/main.css` with HTTP 200; an unauthenticated `/` request redirects to `/login`.
+- `npm run lint` fails at baseline: its `eslint src` command selects no TypeScript files. There is no ESLint configuration in the repository.
+- This machine has no Docker, PostgreSQL installation, or WSL distribution. Authenticated org/project flows, LDAP writes, migrations, and integration behavior require a local service stack or a machine with access to a disposable test environment.
+
 ## Product shape to preserve
 
 - An organization has users, projects, and its own organization admins.
