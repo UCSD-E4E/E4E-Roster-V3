@@ -12,7 +12,7 @@
     <div class="card" style="max-width:640px">
 
       {# Search form #}
-      <form method="GET" action="/pl/projects/{{ project.id }}/users/add">
+      <form method="GET" action="{{ orgBase }}/pl/projects/{{ project.id }}/users/add">
         <div class="form-group">
           <label for="q">Find by username or email</label>
           <div class="form-row" style="align-items:flex-end;gap:.5rem">
@@ -37,7 +37,7 @@
       <h3>{{ found.first_name }} {{ found.last_name }} <code style="font-size:.85rem">{{ found.username }}</code></h3>
       <p class="text-muted" style="margin-bottom:1rem">{{ found.email }} &mdash; {{ found.role or 'no role' }}</p>
 
-      <form method="POST" action="/pl/projects/{{ project.id }}/users/add">
+      <form method="POST" action="{{ orgBase }}/pl/projects/{{ project.id }}/users/add">
         <input type="hidden" name="username" value="{{ found.username }}">
 
         <div class="form-group">
@@ -59,14 +59,14 @@
 
         <div class="form-actions">
           <button type="submit" class="btn btn-primary">Add to Project</button>
-          <a href="/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Cancel</a>
+          <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Cancel</a>
         </div>
       </form>
       {% endif %}
 
       {% if not query %}
       <div class="form-actions" style="margin-top:1.5rem">
-        <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-ghost">Create a new user instead →</a>
+        <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/new" class="btn btn-ghost">Create a new user instead →</a>
       </div>
       {% endif %}
 

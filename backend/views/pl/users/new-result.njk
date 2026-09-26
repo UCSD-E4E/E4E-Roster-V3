@@ -39,11 +39,11 @@
 
       <div class="form-actions" style="margin-top:1.5rem">
         {% if ldapResult.status === 'failed' %}
-        <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-secondary">← Try Again</a>
+        <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/new" class="btn btn-secondary">← Try Again</a>
         {% else %}
-        <a href="/pl/projects/{{ project.id }}/users/new" class="btn btn-secondary">Add Another</a>
+        <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users/new" class="btn btn-secondary">Add Another</a>
         {% endif %}
-        <a href="/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Back to Members</a>
+        <a href="{{ orgBase }}/pl/projects/{{ project.id }}/users" class="btn btn-ghost">Back to Members</a>
       </div>
 
     </div>

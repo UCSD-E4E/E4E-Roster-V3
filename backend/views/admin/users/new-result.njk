@@ -51,9 +51,9 @@
       {% endif %}
 
       <div class="form-actions" style="margin-top:1.5rem">
-        <a href="/admin/users/{{ user.username }}/edit" class="btn btn-secondary">Edit User</a>
-        <a href="/admin/users/new" class="btn btn-secondary">Add Another</a>
-        <a href="/admin/users" class="btn btn-ghost">Back to Users</a>
+        <a href="{{ orgBase }}/admin/users/{{ user.username }}/edit" class="btn btn-secondary">Edit User</a>
+        <a href="{{ orgBase }}/admin/users/new" class="btn btn-secondary">Add Another</a>
+        <a href="{{ orgBase }}/admin/users" class="btn btn-ghost">Back to Users</a>
       </div>
 
     </div>
