@@ -16,6 +16,13 @@ function isLoopbackHostname(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
 }
 
+function configuredProductionOrigin(): string | undefined {
+  const host = process.env.ROSTER_HOST?.trim();
+  // ROSTER_HOST is also used by Traefik's Host rule. Keep this strict so an
+  // accidentally malformed environment value cannot expand the CSRF allowlist.
+  return host && /^[a-z0-9.-]+(?::\d+)?$/i.test(host) ? `https://${host}` : undefined;
+}
+
 /**
  * React workspaces use no inline scripts or styles, so they can be protected
  * more tightly than the remaining legacy templates while those are migrated.
@@ -31,7 +38,11 @@ export function setReactWorkspaceHeaders(_req: Request, res: Response, next: Nex
 export function requireSameOriginMutation(req: Request, res: Response, next: NextFunction): void {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
   const suppliedSource = req.get('origin') ?? req.get('referer');
-  const expectedOrigin = `${req.protocol}://${req.get('host')}`;
+  // The production edge can replace Host while forwarding to the container.
+  // Use its configured public hostname rather than a mutable proxy hop header.
+  const expectedOrigin = process.env.NODE_ENV === 'production'
+    ? configuredProductionOrigin() ?? `${req.protocol}://${req.get('host')}`
+    : `${req.protocol}://${req.get('host')}`;
   let sourceOrigin: string | undefined;
   try { sourceOrigin = suppliedSource ? new URL(suppliedSource).origin : undefined; } catch { /* invalid origins fail closed */ }
   const localPreviewProxy = process.env.NODE_ENV !== 'production'

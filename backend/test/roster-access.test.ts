@@ -141,6 +141,26 @@ test('the local preview proxy may use a different loopback port without bypassin
   assert.doesNotMatch(await response.text(), /Cross-site form submission rejected/);
 });
 
+test('production V2 mutations compare against the configured public roster origin', async () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalRosterHost = process.env.ROSTER_HOST;
+  process.env.NODE_ENV = 'production';
+  process.env.ROSTER_HOST = 'roster.example.test';
+  try {
+    const response = await request(`/orgs/alpha/v2/projects/${fixture.alphaProjectId}`, 'alpha-admin', {
+      method: 'POST',
+      headers: { Origin: 'https://roster.example.test', 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'name=',
+    });
+    assert.equal(response.status, 400);
+    assert.doesNotMatch(await response.text(), /Cross-site form submission rejected/);
+  } finally {
+    process.env.NODE_ENV = originalNodeEnv;
+    if (originalRosterHost === undefined) delete process.env.ROSTER_HOST;
+    else process.env.ROSTER_HOST = originalRosterHost;
+  }
+});
+
 test('the organization root enters the shared React dashboard with role-gated destinations', async () => {
   const root = await request('/orgs/alpha', 'alpha-member');
   assert.equal(root.status, 302);
