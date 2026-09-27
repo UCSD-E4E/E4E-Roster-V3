@@ -446,6 +446,27 @@ test('the React system directory-user workflow provisions through a session resu
   }
 });
 
+test('the System user editor keeps an LDAP failure beside the form', async () => {
+  ldap.setLdapTestOverrides({
+    updateUserProfile: async () => ({ status: 'success', message: 'profile updated' }),
+    updateUserGroups: async () => ({ status: 'success', message: 'groups updated' }),
+    updateUserExpiry: async () => ({ status: 'failed', message: 'Directory rejected the expiry update.' }),
+    setSshKeys: async () => ({ status: 'success', message: 'keys updated' }),
+  });
+  try {
+    const response = await request('/system/v2/users/alpha-member/edit', 'local-admin', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'firstName=Alpha&lastName=Member&email=alpha-member%40example.test&role=student&expiryDate=2030-01-01&groups=alpha-team&sshKeys=',
+    });
+    assert.equal(response.status, 400);
+    const body = await response.text();
+    assert.match(body, /role="alert"/);
+    assert.match(body, /Directory rejected the expiry update/);
+  } finally {
+    ldap.setLdapTestOverrides(undefined);
+  }
+});
+
 test('the React system group workflow provisions LDAP and automatically makes a project group available to its organization', async () => {
   const groupName = 'system-test-group';
   ldap.setLdapTestOverrides({ createGroup: async () => ({ status: 'success', message: 'group created' }) });

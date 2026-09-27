@@ -4,6 +4,7 @@ import { createStaticHandler, createStaticRouter, data, redirect, StaticRouterPr
 import { SystemAuditPage, SystemGroupProvisionPage, SystemLdapMappingsPage, SystemLocalAdminsPage, SystemOrganizationsPage, SystemRouteError, SystemShell, SystemUserCreatePage, SystemUserEditPage, SystemUserProvisionResultPage, SystemUsersPage } from './system-components';
 import { addSystemLdapMapping, createLocalAdmin, createSystemOrganization, deleteLocalAdmin, deleteSystemLdapMapping, deleteSystemOrganization, getSystemGroupProvisioningOptions, getSystemLdapMappings, getSystemUserEdit, listLocalAdmins, listSystemAudit, listSystemDirectoryGroups, listSystemOrganizations, listSystemUsers, provisionSystemGroup, provisionSystemUser, syncSystemDirectory, syncSystemLdapMappings, type SystemUiContext, toggleLocalAdmin, updateSystemLdapMappingRole, updateSystemOrganizationTheme, updateSystemUser } from './system.server';
 import { requireSameOriginMutation, setReactWorkspaceHeaders } from './security';
+import { keepFormError } from './action-errors';
 
 function contextFromExpress(req: ExpressRequest): SystemUiContext {
   if (!req.user) throw new Error('System UI requires an authenticated user.');
@@ -45,10 +46,10 @@ function routesFor(context: SystemUiContext, req: ExpressRequest): RouteObject[]
       const result = await syncSystemDirectory();
       return redirect(`/users?sync=${result.synced},${result.removed},${result.errors}`);
     } },
-    { path: 'users/new', element: <SystemUserCreatePage />, errorElement: <SystemRouteError />, loader: async () => ({ groups: await listSystemDirectoryGroups(), context }), action: async ({ request }) => {
+    { path: 'users/new', element: <SystemUserCreatePage />, errorElement: <SystemRouteError />, loader: async () => ({ groups: await listSystemDirectoryGroups(), context }), action: ({ request }) => keepFormError(async () => {
       const form = await request.formData(); req.session.systemProvisionResult = await provisionSystemUser(context.user.username, formFields(form));
       return redirect('/users/new/result');
-    } },
+    }) },
     { path: 'users/new/result', element: <SystemUserProvisionResultPage />, errorElement: <SystemRouteError />, loader: () => {
       const result = req.session.systemProvisionResult; delete req.session.systemProvisionResult;
       if (!result) throw data('No recent directory-user provisioning result was found.', { status: 404 });
@@ -57,10 +58,10 @@ function routesFor(context: SystemUiContext, req: ExpressRequest): RouteObject[]
     { path: 'users/:username/edit', element: <SystemUserEditPage />, errorElement: <SystemRouteError />, loader: async ({ params }) => {
       if (!params.username) throw data('Invalid directory user.', { status: 400 }); const [user, groups] = await Promise.all([getSystemUserEdit(params.username), listSystemDirectoryGroups()]);
       if (!user) throw data('Directory user not found.', { status: 404 }); return { user, groups, context };
-    }, action: async ({ params, request }) => {
+    }, action: ({ params, request }) => keepFormError(async () => {
       if (!params.username) throw data('Invalid directory user.', { status: 400 }); const form = await request.formData();
       await updateSystemUser(context.user.username, params.username, formFields(form)); return redirect('/users');
-    } },
+    }) },
     { path: 'groups/new', element: <SystemGroupProvisionPage />, errorElement: <SystemRouteError />, loader: async () => ({ options: await getSystemGroupProvisioningOptions(), context }), action: async ({ request }) => {
       const result = await provisionSystemGroup(context.user.username, formFields(await request.formData()));
       return redirect(`/groups/new?created=${encodeURIComponent(result.name)}`);
