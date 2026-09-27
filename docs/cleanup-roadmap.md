@@ -12,7 +12,7 @@ Status: focused multi-organization integration verification and the React worksp
 - The local host was smoke-tested through break-glass login, system admin,
   organization selection, dashboard, settings, and group management. React
   pages return a strict CSP and `Cache-Control: private, no-store`.
-- All 36 Nunjucks templates compile. The edited add/result templates render with organization-scoped links.
+- The retired Nunjucks workspace handlers and templates have been removed. Nunjucks remains only for the SSO login and break-glass login pages; all roster, project, and system administration views use React SSR.
 - The compiled Express app serves `/login`, `/local-login`, and `/static/css/main.css` with HTTP 200; an unauthenticated `/` request redirects to `/login`.
 - `npm run lint` fails at baseline: its `eslint src` command selects no TypeScript files. There is no ESLint configuration in the repository.
 - Real LDAP writes, GitHub/Slack calls, production migrations, and production

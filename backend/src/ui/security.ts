@@ -25,7 +25,7 @@ function configuredProductionOrigin(): string | undefined {
 
 /**
  * React workspaces use no inline scripts or styles, so they can be protected
- * more tightly than the remaining legacy templates while those are migrated.
+ * more tightly than the small Nunjucks login surface that remains.
  */
 export function setReactWorkspaceHeaders(_req: Request, res: Response, next: NextFunction): void {
   res.setHeader('Content-Security-Policy', reactCsp);

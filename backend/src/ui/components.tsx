@@ -185,7 +185,6 @@ export function ProjectsPage(): React.JSX.Element {
 export function ProjectPage(): React.JSX.Element {
   const { project, context } = useLoaderData() as { project: ProjectDetail; context: RosterUiContext };
   const isAdmin = canAdminOrg(context);
-  const legacyProjectBase = `/orgs/${context.org.slug}/pl/projects/${project.id}/users`;
 
   return (
     <>

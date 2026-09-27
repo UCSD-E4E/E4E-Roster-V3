@@ -5,19 +5,11 @@ import { SystemAuditPage, SystemGroupProvisionPage, SystemLdapMappingsPage, Syst
 import { addSystemLdapMapping, createLocalAdmin, createSystemOrganization, deleteLocalAdmin, deleteSystemLdapMapping, deleteSystemOrganization, getSystemGroupProvisioningOptions, getSystemLdapMappings, getSystemUserEdit, listLocalAdmins, listSystemAudit, listSystemDirectoryGroups, listSystemOrganizations, listSystemUsers, provisionSystemGroup, provisionSystemUser, syncSystemDirectory, syncSystemLdapMappings, type SystemUiContext, toggleLocalAdmin, updateSystemLdapMappingRole, updateSystemOrganizationTheme, updateSystemUser } from './system.server';
 import { requireSameOriginMutation, setReactWorkspaceHeaders } from './security';
 import { keepFormError } from './action-errors';
+import { formFields, sendFetchResponse, webRequest } from './http';
 
 function contextFromExpress(req: ExpressRequest): SystemUiContext {
   if (!req.user) throw new Error('System UI requires an authenticated user.');
   return { user: req.user, basePath: '/system/v2' };
-}
-
-function formFields(form: FormData): Record<string, string | string[]> {
-  const fields: Record<string, string | string[]> = {};
-  form.forEach((value, key) => {
-    const existing = fields[key];
-    fields[key] = existing === undefined ? String(value) : [...(Array.isArray(existing) ? existing : [existing]), String(value)];
-  });
-  return fields;
 }
 
 function routesFor(context: SystemUiContext, req: ExpressRequest): RouteObject[] {
@@ -81,21 +73,13 @@ function routesFor(context: SystemUiContext, req: ExpressRequest): RouteObject[]
   ] }];
 }
 
-function webRequest(req: ExpressRequest): globalThis.Request {
-  const protocol = req.protocol || 'http'; const host = req.get('host') ?? 'localhost'; const headers = new Headers();
-  for (const [name, value] of Object.entries(req.headers)) { if (typeof value === 'string') headers.set(name, value); else if (Array.isArray(value)) value.forEach((item) => headers.append(name, item)); }
-  const init: RequestInit = { method: req.method, headers };
-  if (req.method !== 'GET' && req.method !== 'HEAD') { const body = new URLSearchParams(); for (const [name, value] of Object.entries(req.body as Record<string, unknown>)) for (const item of Array.isArray(value) ? value : [value]) if (item != null) body.append(name, String(item)); init.body = body; headers.set('content-type', 'application/x-www-form-urlencoded;charset=UTF-8'); }
-  return new globalThis.Request(`${protocol}://${host}${req.originalUrl}`, init);
-}
-
 export function createReactSystemRouter(): Router {
   const router = Router();
   router.use(setReactWorkspaceHeaders);
   router.use(requireSameOriginMutation);
   router.all('*', async (req: ExpressRequest, res: Response, next: NextFunction) => { try {
     const context = contextFromExpress(req); const { query, dataRoutes } = createStaticHandler(routesFor(context, req), { basename: context.basePath }); const result = await query(webRequest(req));
-    if (result instanceof globalThis.Response) { result.headers.forEach((value, name) => res.setHeader(name, value)); res.status(result.status).send(Buffer.from(await result.arrayBuffer())); return; }
+    if (result instanceof globalThis.Response) { await sendFetchResponse(result, res); return; }
     const markup = renderToString(<StaticRouterProvider router={createStaticRouter(dataRoutes, result)} context={result} hydrate={false} />); res.status(result.statusCode).type('html').send(`<!DOCTYPE html>${markup}`);
   } catch (error) { next(error); } });
   return router;
