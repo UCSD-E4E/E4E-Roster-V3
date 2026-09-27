@@ -479,6 +479,27 @@ test('the React people workspace is scoped to the active organisation', async ()
   assert.match(body, /Only people with an organization membership appear here/);
 });
 
+test('People and System Users expose expiry dates and server-side sortable headers', async () => {
+  await db.query("UPDATE users SET expiry_date = CASE username WHEN 'alpha-admin' THEN '2031-01-01'::date WHEN 'alpha-member' THEN '2029-01-01'::date ELSE expiry_date END");
+  try {
+    const people = await request('/orgs/alpha/v2/people?sort=expiry&dir=asc', 'alpha-admin');
+    assert.equal(people.status, 200);
+    const peopleBody = await people.text();
+    assert.match(peopleBody, /href="\/orgs\/alpha\/v2\/people\?sort=expiry&amp;dir=desc"/);
+    assert.match(peopleBody, />Expiry</);
+    assert.match(peopleBody, /2031-01-01/);
+    assert.ok(peopleBody.indexOf('2029-01-01') < peopleBody.indexOf('2031-01-01'));
+
+    const system = await request('/system/v2/users?sort=expiry&dir=asc', 'local-admin');
+    assert.equal(system.status, 200);
+    const systemBody = await system.text();
+    assert.match(systemBody, /2031-01-01/);
+    assert.ok(systemBody.indexOf('2029-01-01') < systemBody.indexOf('2031-01-01'));
+  } finally {
+    await db.query("UPDATE users SET expiry_date = NULL WHERE username IN ('alpha-admin', 'alpha-member')");
+  }
+});
+
 test('the React add-person search ranks directory matches and shows membership status', async () => {
   const response = await request('/orgs/alpha/v2/people/add?q=member', 'alpha-admin');
   assert.equal(response.status, 200);

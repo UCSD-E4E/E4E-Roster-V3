@@ -12,6 +12,7 @@ export interface OrgPerson {
   email: string | null;
   role: string | null;
   orgRole: string;
+  expiryDate: string | null;
   disabled: boolean;
   groups: string[];
 }
@@ -42,7 +43,7 @@ export interface OrgPersonEdit {
   sshPublicKeys: string[];
 }
 
-export async function listPeople(context: RosterUiContext): Promise<OrgPerson[]> {
+export async function listPeople(context: RosterUiContext, sort = 'name', direction = 'asc'): Promise<OrgPerson[]> {
   if (!canViewPeople(context)) throw data('People workspace access required.', { status: 403 });
 
   const { rows } = await db.query<{
@@ -52,30 +53,48 @@ export async function listPeople(context: RosterUiContext): Promise<OrgPerson[]>
     email: string | null;
     role: string | null;
     org_role: string;
+    expiry_date: string | null;
     disabled: boolean;
     ldap_groups: string[];
     org_groups: string[];
   }>(`
     SELECT u.username, u.first_name, u.last_name, u.email, u.role,
            uo.role AS org_role, u.disabled, u.ldap_groups,
+           TO_CHAR(u.expiry_date, 'YYYY-MM-DD') AS expiry_date,
            COALESCE(ARRAY_AGG(og.ldap_group) FILTER (WHERE og.ldap_group IS NOT NULL), '{}') AS org_groups
     FROM users u
     JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $1
     LEFT JOIN org_groups og ON og.org_id = uo.org_id AND og.ldap_group = ANY(u.ldap_groups)
-    GROUP BY u.username, u.first_name, u.last_name, u.email, u.role, uo.role, u.disabled, u.ldap_groups
+    GROUP BY u.username, u.first_name, u.last_name, u.email, u.role, uo.role, u.disabled, u.ldap_groups, u.expiry_date
     ORDER BY u.last_name, u.first_name, u.username
   `, [context.org.id]);
 
-  return rows.map((row) => ({
+  const people = rows.map((row) => ({
     username: row.username,
     firstName: row.first_name,
     lastName: row.last_name,
     email: row.email,
     role: row.role,
     orgRole: row.org_role,
+    expiryDate: row.expiry_date,
     disabled: row.disabled,
     groups: row.org_groups,
   }));
+  const values: Record<string, (person: OrgPerson) => string> = {
+    name: (person) => `${person.lastName ?? ''}\u0000${person.firstName ?? ''}\u0000${person.username}`,
+    role: (person) => person.orgRole,
+    groups: (person) => person.groups.join('\u0000'),
+    expiry: (person) => person.expiryDate ?? '',
+    status: (person) => person.disabled ? 'disabled' : 'active',
+  };
+  const value = values[sort] ?? values.name;
+  const multiplier = direction === 'desc' ? -1 : 1;
+  return people.sort((left, right) => {
+    const leftValue = value(left); const rightValue = value(right);
+    if (!leftValue) return rightValue ? 1 : 0;
+    if (!rightValue) return -1;
+    return leftValue.localeCompare(rightValue) * multiplier;
+  });
 }
 
 export async function listOrgGroups(context: RosterUiContext): Promise<string[]> {

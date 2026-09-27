@@ -99,7 +99,7 @@ function routesFor(context: RosterUiContext, req: ExpressRequest): RouteObject[]
         path: 'people',
         element: <PeoplePage />,
         errorElement: <RouteErrorPage />,
-        loader: async ({ request }) => ({ people: await listPeople(context), sync: new URL(request.url).searchParams.get('sync'), context }),
+        loader: async ({ request }) => { const search = new URL(request.url).searchParams; return { people: await listPeople(context, search.get('sort') ?? undefined, search.get('dir') ?? undefined), sync: search.get('sync'), sort: search.get('sort') ?? 'name', direction: search.get('dir') === 'desc' ? 'desc' : 'asc', context }; },
         action: ({ request }) => keepFormError(async () => {
           const form = await request.formData();
           if (String(form.get('intent')) !== 'sync') throw data('Unknown people action.', { status: 400 });

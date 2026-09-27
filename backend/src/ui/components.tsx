@@ -23,6 +23,12 @@ function FormError(): React.JSX.Element | null {
   return actionData?.formError ? <p className="form-error" role="alert">{actionData.formError}</p> : null;
 }
 
+function SortableHeader({ label, sort, currentSort, direction, wide = false }: { label: string; sort: string; currentSort: string; direction: string; wide?: boolean }): React.JSX.Element {
+  const active = currentSort === sort;
+  const nextDirection = active && direction === 'asc' ? 'desc' : 'asc';
+  return <th className={wide ? 'wide-column' : undefined} aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}><Link className="table-sort" to={`?sort=${sort}&dir=${nextDirection}`}>{label}<span aria-hidden="true">{active ? (direction === 'asc' ? ' ↑' : ' ↓') : ' ↕'}</span></Link></th>;
+}
+
 type WorkspacePageHeaderProps = {
   eyebrow: string;
   title: string;
@@ -405,7 +411,7 @@ export function ProjectMemberEditPage(): React.JSX.Element {
 }
 
 export function PeoplePage(): React.JSX.Element {
-  const { people, sync, context } = useLoaderData() as { people: OrgPerson[]; sync: string | null; context: RosterUiContext };
+  const { people, sync, sort, direction, context } = useLoaderData() as { people: OrgPerson[]; sync: string | null; sort: string; direction: string; context: RosterUiContext };
   const isAdmin = canAdminOrg(context);
 
   return (
@@ -432,12 +438,13 @@ export function PeoplePage(): React.JSX.Element {
         {people.length === 0 ? <div className="empty-state compact"><p>No people belong to this organization yet.</p></div> : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Person</th><th>Organization role</th><th>Groups</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
+              <thead><tr><SortableHeader label="Person" sort="name" currentSort={sort} direction={direction} /><SortableHeader label="Organization role" sort="role" currentSort={sort} direction={direction} /><SortableHeader label="Groups" sort="groups" currentSort={sort} direction={direction} /><SortableHeader label="Expiry" sort="expiry" currentSort={sort} direction={direction} wide /><SortableHeader label="Status" sort="status" currentSort={sort} direction={direction} /><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>{people.map((person) => (
                 <tr key={person.username}>
                   <td><strong>{isAdmin ? <Link className="person-link" to={`/people/${person.username}/edit`}>{[person.firstName, person.lastName].filter(Boolean).join(' ') || person.username}</Link> : ([person.firstName, person.lastName].filter(Boolean).join(' ') || person.username)}</strong><small>{person.username} · {person.email}</small></td>
                   <td>{person.orgRole.replace('_', ' ')}</td>
                   <td><div className="tag-row table-tags">{person.groups.length ? person.groups.map((group) => <span className="tag small" key={group}>{group}</span>) : '—'}</div></td>
+                  <td className="wide-column">{person.expiryDate ?? 'No expiry'}</td>
                   <td><span className={person.disabled ? 'status disabled' : 'status active'}>{person.disabled ? 'Disabled' : 'Active'}</span></td>
                   <td>{isAdmin && <Link className="row-link" to={`/people/${person.username}/edit`}>Manage</Link>}</td>
                 </tr>

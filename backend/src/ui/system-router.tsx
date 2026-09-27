@@ -39,7 +39,7 @@ function routesFor(context: SystemUiContext, req: ExpressRequest): RouteObject[]
       return redirect('/organizations');
     } },
     { path: 'audit', element: <SystemAuditPage />, errorElement: <SystemRouteError />, loader: async ({ request }) => ({ audit: await listSystemAudit(Number(new URL(request.url).searchParams.get('days') ?? '7')), context }) },
-    { path: 'users', element: <SystemUsersPage />, errorElement: <SystemRouteError />, loader: async ({ request }) => ({ users: await listSystemUsers(), sync: new URL(request.url).searchParams.get('sync'), context }), action: async ({ request }) => {
+    { path: 'users', element: <SystemUsersPage />, errorElement: <SystemRouteError />, loader: async ({ request }) => { const search = new URL(request.url).searchParams; return { users: await listSystemUsers(search.get('sort') ?? undefined, search.get('dir') ?? undefined), sync: search.get('sync'), sort: search.get('sort') ?? 'name', direction: search.get('dir') === 'desc' ? 'desc' : 'asc', context }; }, action: async ({ request }) => {
       const form = await request.formData();
       if (String(form.get('intent')) !== 'sync') throw data('Unknown directory action.', { status: 400 });
       const result = await syncSystemDirectory();
