@@ -161,6 +161,26 @@ test('production V2 mutations compare against the configured public roster origi
   }
 });
 
+test('V2 accepts a same-origin browser navigation when privacy settings omit Origin and Referer', async () => {
+  const response = await request(`/orgs/alpha/v2/projects/${fixture.alphaProjectId}`, 'alpha-admin', {
+    method: 'POST',
+    headers: { Origin: '', 'Sec-Fetch-Site': 'same-origin', 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'name=',
+  });
+  assert.equal(response.status, 400);
+  assert.doesNotMatch(await response.text(), /Cross-site form submission rejected/);
+});
+
+test('V2 rejects an origin-less cross-site browser navigation', async () => {
+  const response = await request(`/orgs/alpha/v2/projects/${fixture.alphaProjectId}`, 'alpha-admin', {
+    method: 'POST',
+    headers: { Origin: '', 'Sec-Fetch-Site': 'cross-site', 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'name=',
+  });
+  assert.equal(response.status, 403);
+  assert.match(await response.text(), /Cross-site form submission rejected/);
+});
+
 test('the organization root enters the shared React dashboard with role-gated destinations', async () => {
   const root = await request('/orgs/alpha', 'alpha-member');
   assert.equal(root.status, 302);

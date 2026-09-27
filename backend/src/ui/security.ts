@@ -45,11 +45,15 @@ export function requireSameOriginMutation(req: Request, res: Response, next: Nex
     : `${req.protocol}://${req.get('host')}`;
   let sourceOrigin: string | undefined;
   try { sourceOrigin = suppliedSource ? new URL(suppliedSource).origin : undefined; } catch { /* invalid origins fail closed */ }
+  // Some browser form navigations omit Origin and are suppressed from sending a
+  // Referer by the privacy policy. Sec-Fetch-Site gives us the same browser
+  // provenance signal without accepting an unknown or cross-site request.
+  const sameOriginBrowserNavigation = !sourceOrigin && req.get('sec-fetch-site') === 'same-origin';
   const localPreviewProxy = process.env.NODE_ENV !== 'production'
     && sourceOrigin
     && isLoopbackHostname(new URL(sourceOrigin).hostname)
     && isLoopbackHostname(req.hostname);
-  if (!localPreviewProxy && (!sourceOrigin || sourceOrigin !== expectedOrigin)) {
+  if (!sameOriginBrowserNavigation && !localPreviewProxy && (!sourceOrigin || sourceOrigin !== expectedOrigin)) {
     res.status(403).type('text').send('Cross-site form submission rejected.');
     return;
   }
