@@ -12,6 +12,10 @@ const reactCsp = [
   "connect-src 'self'",
 ].join('; ');
 
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
 /**
  * React workspaces use no inline scripts or styles, so they can be protected
  * more tightly than the remaining legacy templates while those are migrated.
@@ -30,7 +34,11 @@ export function requireSameOriginMutation(req: Request, res: Response, next: Nex
   const expectedOrigin = `${req.protocol}://${req.get('host')}`;
   let sourceOrigin: string | undefined;
   try { sourceOrigin = suppliedSource ? new URL(suppliedSource).origin : undefined; } catch { /* invalid origins fail closed */ }
-  if (!sourceOrigin || sourceOrigin !== expectedOrigin) {
+  const localPreviewProxy = process.env.NODE_ENV !== 'production'
+    && sourceOrigin
+    && isLoopbackHostname(new URL(sourceOrigin).hostname)
+    && isLoopbackHostname(req.hostname);
+  if (!localPreviewProxy && (!sourceOrigin || sourceOrigin !== expectedOrigin)) {
     res.status(403).type('text').send('Cross-site form submission rejected.');
     return;
   }

@@ -130,6 +130,17 @@ test('the React project workspace preserves project-lead organisation scoping', 
   assert.doesNotMatch(body, /Beta project/);
 });
 
+test('the local preview proxy may use a different loopback port without bypassing production CSRF checks', async () => {
+  const response = await request(`/orgs/alpha/v2/projects/${fixture.alphaProjectId}`, 'alpha-admin', {
+    method: 'POST',
+    headers: { Origin: 'http://127.0.0.1:3300', 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'name=',
+  });
+  // The invalid project name reaches the action (400); it is not rejected as cross-site.
+  assert.equal(response.status, 400);
+  assert.doesNotMatch(await response.text(), /Cross-site form submission rejected/);
+});
+
 test('the organization root enters the shared React dashboard with role-gated destinations', async () => {
   const root = await request('/orgs/alpha', 'alpha-member');
   assert.equal(root.status, 302);
