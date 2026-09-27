@@ -4,6 +4,7 @@ import passport from 'passport';
 import nunjucks from 'nunjucks';
 import helmet from 'helmet';
 import path from 'path';
+import { AuthUser } from './types/user';
 
 import { requireAuth } from './middleware/requireAuth';
 import { requireSystemAdmin } from './middleware/requireSystemAdmin';
@@ -12,13 +13,17 @@ import { requireOrgMember } from './middleware/requireOrgMember';
 import authRouter from './routes/auth';
 import localAuthRouter from './routes/local-auth';
 import orgsRouter from './routes/orgs';
-import dashboardRouter from './routes/dashboard';
-import accountRouter from './routes/account';
-import adminRouter from './routes/admin/index';
-import plRouter from './routes/pl/index';
-import systemRouter from './routes/system/index';
+import { createReactRosterRouter } from './ui/router';
+import { createReactSystemRouter } from './ui/system-router';
+import { retireLegacyOrgUi, retireLegacySystemUi } from './ui/legacy-redirects';
 
-export function createApp(): express.Application {
+export interface CreateAppOptions {
+  // Tests can supply a user without standing up an OIDC issuer. This hook is
+  // opt-in and has no request-visible behaviour in the production bootstrap.
+  testUserFromRequest?: (req: Request) => AuthUser | undefined;
+}
+
+export function createApp(options: CreateAppOptions = {}): express.Application {
   const app = express();
 
   const viewsDir  = process.env.VIEWS_DIR  ?? path.join(__dirname, '../views');
@@ -59,6 +64,17 @@ export function createApp(): express.Application {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  if (options.testUserFromRequest) {
+    app.use((req: Request, _res: Response, next: NextFunction) => {
+      const user = options.testUserFromRequest?.(req);
+      if (user) {
+        req.user = user;
+        req.isAuthenticated = (() => true) as typeof req.isAuthenticated;
+      }
+      next();
+    });
+  }
+
   // Make authenticated user available in all templates
   app.use((req: Request, res: Response, next: NextFunction) => {
     res.locals.user = req.user ?? null;
@@ -96,16 +112,18 @@ export function createApp(): express.Application {
     next();
   });
 
-  orgRouter.get('/', (_req, res: Response) => res.redirect(res.locals.orgBase + '/dashboard'));
-  orgRouter.use('/dashboard', dashboardRouter);
-  orgRouter.use('/account',   accountRouter);
-  orgRouter.use('/admin',     adminRouter);
-  orgRouter.use('/pl',        plRouter);
+  orgRouter.get('/', (_req, res: Response) => res.redirect(res.locals.orgBase + '/v2/dashboard'));
+  orgRouter.use('/v2', createReactRosterRouter());
+  // Legacy Nunjucks workspaces are retired. Known GET links keep a safe,
+  // query-preserving bridge to their React replacement; old mutations are
+  // deliberately unreachable rather than leaving a second write surface.
+  orgRouter.use(retireLegacyOrgUi);
 
   app.use('/orgs/:orgSlug', orgRouter);
 
   // ── System admin (cross-org) ──────────────────────────────────────
-  app.use('/system', requireAuth, requireSystemAdmin, systemRouter);
+  app.use('/system/v2', requireAuth, requireSystemAdmin, createReactSystemRouter());
+  app.use('/system', requireAuth, requireSystemAdmin, retireLegacySystemUi);
 
   // ── Global error handler ──────────────────────────────────────────
   // Must be last: 4-argument signature tells Express this is an error handler.

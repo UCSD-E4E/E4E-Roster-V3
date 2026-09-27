@@ -9,7 +9,7 @@ import { NewUser } from '../../services/types';
 
 const router = Router();
 
-router.get('/', (_req, res: Response) => res.redirect('/system/local-admins'));
+router.get('/', (_req, res: Response) => res.redirect('/system/v2/local-admins'));
 
 // ── User management ───────────────────────────────────────────────────────────
 
@@ -359,6 +359,7 @@ router.post('/orgs/:id/theme', async (req: Request, res: Response) => {
 });
 
 router.post('/orgs/:id/delete', async (req: Request, res: Response) => {
+  await db.query('UPDATE audit_log SET org_id = NULL WHERE org_id = $1', [req.params.id]);
   await db.query('DELETE FROM orgs WHERE id = $1', [req.params.id]);
   res.redirect('/system/orgs');
 });

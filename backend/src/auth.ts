@@ -42,6 +42,12 @@ export function setupPassport(client: Client): void {
     ),
   );
 
+}
+
+// Session serialisation is also needed by the break-glass local-login route.
+// Keep it independent from OIDC setup so SKIP_OIDC=true remains usable for a
+// disposable local environment.
+export function setupPassportSession(): void {
   passport.serializeUser((user: Express.User, done) => {
     done(null, user);
   });

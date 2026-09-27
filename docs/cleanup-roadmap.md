@@ -1,14 +1,33 @@
 # Roster cleanup roadmap
 
-Status: code review and local build completed on `codex/roster-cleanup-plan` (2026-09-25). Production is still deployed manually on `krg-prod`; the production database and AD restore procedures have not yet been confirmed. This is a staged plan, not authorization to run migrations or deploy.
+Status: focused multi-organization integration verification and the React workspace migration completed locally on `fix/remove_nunchunk_site` (2026-09-26). Production is still deployed manually on `krg-prod`; the production database and AD restore procedures have not yet been confirmed. This is a staged plan, not authorization to run migrations or deploy.
 
 ## Local verification
 
 - `npm ci --no-audit --no-fund` and `npm run build` pass in `backend/`.
+- A disposable Docker PostgreSQL 16 stack on port 55432 exercises 51 focused
+  integration tests for two organizations, shared LDAP groups, project leads,
+  missing `user_orgs` memberships, scoped read/write denial, provision/edit
+  workflows, and cross-site mutation rejection.
+- The local host was smoke-tested through break-glass login, system admin,
+  organization selection, dashboard, settings, and group management. React
+  pages return a strict CSP and `Cache-Control: private, no-store`.
 - All 36 Nunjucks templates compile. The edited add/result templates render with organization-scoped links.
 - The compiled Express app serves `/login`, `/local-login`, and `/static/css/main.css` with HTTP 200; an unauthenticated `/` request redirects to `/login`.
 - `npm run lint` fails at baseline: its `eslint src` command selects no TypeScript files. There is no ESLint configuration in the repository.
-- This machine has no Docker, PostgreSQL installation, or WSL distribution. Authenticated org/project flows, LDAP writes, migrations, and integration behavior require a local service stack or a machine with access to a disposable test environment.
+- Real LDAP writes, GitHub/Slack calls, production migrations, and production
+  authentication remain unverified; the local stack deliberately uses a closed
+  LDAP port and test identities.
+- A read-only production LDAP probe on 2026-09-26 confirmed that `krg-ldap` is
+  healthy, `svc_roster` exists, and the deployed roster service can bind and
+  perform a single suppressed-attribute lookup. It did not read roster data or
+  write LDAP/PostgreSQL. The expired LDAPS certificate was renewed on 2026-09-27
+  for `krg-ldap.krg.local` and validates through 2026-12-26. The roster still
+  uses the separate `krg-ldap.ucsd.edu` hostname, and its client globally
+  disables certificate verification. Move the roster to the internal hostname
+  (or extend the PKI role and certificate SAN), install the CA chain in the
+  roster image, and then remove that bypass. Treat this as a deployment blocker,
+  not an excuse to retain it.
 
 ## Product shape to preserve
 
@@ -70,6 +89,13 @@ Status: code review and local build completed on `codex/roster-cleanup-plan` (20
 - Confirm how a user becomes a project lead for a *specific* project. The current org-wide `project_lead` role plus LDAP group overlap is only an approximation.
 - Confirm whether organization membership from LDAP is automatic, manually granted, or both, and what should happen when the granting group disappears.
 - Confirm production backup owners and whether a de-identified data snapshot can be made available for local tests. No remote-machine access is assumed.
+- Provide the renewed `krg-ldap` LDAPS certificate chain (and the intended CA
+  bundle/hostname contract for the roster container) before enforcing TLS
+  validation. The current certificate subject is `krg-ldap.krg.local`, issued
+  by `KRG Lab Internal Intermediate CA`, and expires on 2026-12-26. Its SAN
+  covers the AD-internal hostname only; either move the roster to
+  `krg-ldap.krg.local` or extend the PKI role and issue a certificate that also
+  covers `krg-ldap.ucsd.edu`.
 
 ## Deployment evidence
 

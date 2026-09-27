@@ -19,8 +19,8 @@ router.get('/', async (req: Request, res: Response) => {
   if (selectedGroup) {
     const [mappingRows, roleRow] = await Promise.all([
       db.query(
-        'SELECT id, service, target_id, target_name FROM group_mappings WHERE ldap_group = $1 ORDER BY service, target_name',
-        [selectedGroup],
+        'SELECT id, service, target_id, target_name FROM group_mappings WHERE ldap_group = $1 AND org_id = $2 ORDER BY service, target_name',
+        [selectedGroup, orgId],
       ),
       db.query<{ role: string }>(
         'SELECT role FROM org_ldap_group_mappings WHERE org_id = $1 AND ldap_group = $2',
@@ -53,7 +53,7 @@ router.post('/mappings', async (req: Request, res: Response) => {
 
 router.post('/mappings/:id/delete', async (req: Request, res: Response) => {
   const { ldapGroup } = req.body as { ldapGroup: string };
-  await db.query('DELETE FROM group_mappings WHERE id = $1', [req.params.id]);
+  await db.query('DELETE FROM group_mappings WHERE id = $1 AND org_id = $2', [req.params.id, res.locals.currentOrg?.id]);
   res.redirect(`${res.locals.orgBase}/admin/integrations?group=${encodeURIComponent(ldapGroup)}`);
 });
 

@@ -18,7 +18,8 @@ async function fetchJSON(url: string, timeoutMs = 2000): Promise<unknown> {
 
 router.get('/new', async (req: Request, res: Response) => {
   const { rows: projects } = await db.query<{ id: number; name: string }>(
-    'SELECT id, name FROM projects ORDER BY name',
+    'SELECT id, name FROM projects WHERE org_id = $1 ORDER BY name',
+    [res.locals.currentOrg?.id],
   );
 
   const [teamsRes, channelsRes] = await Promise.allSettled([
@@ -43,17 +44,26 @@ router.post('/', async (req: Request, res: Response) => {
     return res.redirect(`${res.locals.orgBase}/admin/groups/new?error=Group+name+is+required`);
   }
 
+  const orgId = res.locals.currentOrg?.id as number;
+  if (projectId) {
+    const { rows } = await db.query(
+      'SELECT 1 FROM projects WHERE id = $1 AND org_id = $2',
+      [parseInt(projectId, 10), orgId],
+    );
+    if (!rows.length) return res.status(400).send('Project does not belong to this organisation');
+  }
+
   const result = await createGroup(name);
   if (result.status === 'failed') {
     return res.redirect(`${res.locals.orgBase}/admin/groups/new?error=${encodeURIComponent(result.message)}`);
   }
 
   const actor  = req.user?.username ?? 'admin';
-  const orgId  = res.locals.currentOrg?.id ?? null;
+  const auditOrgId = orgId ?? null;
 
   await db.query(
     'INSERT INTO audit_log (actor, action, details, org_id) VALUES ($1, $2, $3, $4)',
-    [actor, 'create_ldap_group', JSON.stringify({ groupName: name, alreadyExisted: result.status === 'already_exists' }), orgId],
+    [actor, 'create_ldap_group', JSON.stringify({ groupName: name, alreadyExisted: result.status === 'already_exists' }), auditOrgId],
   );
 
   if (orgId) {
@@ -67,20 +77,20 @@ router.post('/', async (req: Request, res: Response) => {
     await db.query(
       'INSERT INTO project_ldap_groups (project_id, ldap_group) VALUES ($1, $2) ON CONFLICT DO NOTHING',
       [parseInt(projectId, 10), name],
-    ).catch(() => {});
+    );
   }
 
   if (githubTeamSlug && githubTeamName) {
     await db.query(
       'INSERT INTO group_mappings (ldap_group, service, target_id, target_name, org_id) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
-      [name, 'github', githubTeamSlug, githubTeamName, orgId],
+      [name, 'github', githubTeamSlug, githubTeamName, auditOrgId],
     );
   }
 
   if (slackChannelId && slackChannelName) {
     await db.query(
       'INSERT INTO group_mappings (ldap_group, service, target_id, target_name, org_id) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
-      [name, 'slack', slackChannelId, slackChannelName, orgId],
+      [name, 'slack', slackChannelId, slackChannelName, auditOrgId],
     );
   }
 

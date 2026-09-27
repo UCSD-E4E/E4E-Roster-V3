@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { generateUsername } from '../../services/ldap';
 import * as ldap from '../../services/ldap';
-import { db } from '../../services/db';
+import { db, ensureUserOrgMembership } from '../../services/db';
 import { syncUsers } from '../../services/sync';
 import { triggerGithubInvite } from '../../services/integrations';
 import { NewUser } from '../../services/types';
@@ -50,11 +50,13 @@ router.post('/sync', async (_req: Request, res: Response) => {
 router.get('/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
   const { rows } = await db.query(
-    `SELECT username, first_name, last_name, email, secondary_email, phone, role,
-            TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
-            disabled, ldap_groups, github_username, slack_username
-     FROM users WHERE username = $1`,
-    [username],
+    `SELECT u.username, u.first_name, u.last_name, u.email, u.secondary_email, u.phone, u.role,
+            TO_CHAR(u.expiry_date, 'YYYY-MM-DD') AS expiry_date,
+            u.disabled, u.ldap_groups, u.github_username, u.slack_username
+     FROM users u
+     JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $2
+     WHERE u.username = $1`,
+    [username, res.locals.currentOrg?.id],
   );
   if (!rows.length) return res.status(404).send('User not found');
 
@@ -85,11 +87,20 @@ router.post('/:username/edit', async (req: Request, res: Response) => {
   // Fetch current user groups and org group list in parallel
   const orgId = res.locals.currentOrg?.id;
   const [{ rows: currentRows }, { rows: orgGroupRows }] = await Promise.all([
-    db.query<{ ldap_groups: string[] }>('SELECT ldap_groups FROM users WHERE username = $1', [username]),
+    db.query<{ ldap_groups: string[] }>(
+      `SELECT u.ldap_groups FROM users u
+       JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $2
+       WHERE u.username = $1`,
+      [username, orgId],
+    ),
     db.query<{ ldap_group: string }>('SELECT ldap_group FROM org_groups WHERE org_id = $1', [orgId]),
   ]);
 
   const orgGroupSet = new Set(orgGroupRows.map(r => r.ldap_group));
+  if (!selectedOrgGroups.every((group) => orgGroupSet.has(group))) {
+    return res.status(400).send('Submitted groups do not belong to this organisation.');
+  }
+  if (!currentRows.length) return res.status(404).send('User not found in this organisation');
   // Preserve groups that don't belong to this org, merge with the org selections
   const nonOrgGroups = (currentRows[0]?.ldap_groups ?? []).filter(g => !orgGroupSet.has(g));
   const mergedGroups = [...new Set([...nonOrgGroups, ...selectedOrgGroups])];
@@ -195,6 +206,9 @@ router.post('/add', async (req: Request, res: Response) => {
   const orgId = res.locals.currentOrg?.id as number;
 
   if (!username || !role) return res.status(400).send('Missing username or role');
+  if (!['org_admin', 'project_lead', 'member'].includes(role)) {
+    return res.status(400).send('Invalid organisation role');
+  }
 
   const { rows } = await db.query('SELECT username FROM users WHERE username = $1', [username]);
   if (!rows.length) return res.status(404).send('User not found');
@@ -254,6 +268,17 @@ router.post('/new', async (req: Request, res: Response) => {
     serverGroups: [],
   };
 
+  const orgId = res.locals.currentOrg?.id as number;
+  const selectedOrgGroups = [ldapGroups ?? []].flat();
+  const { rows: orgGroups } = await db.query<{ ldap_group: string }>(
+    'SELECT ldap_group FROM org_groups WHERE org_id = $1', [orgId],
+  );
+  const orgGroupSet = new Set(orgGroups.map((group) => group.ldap_group));
+  if (!selectedOrgGroups.every((group) => typeof group === 'string' && orgGroupSet.has(group))) {
+    return res.status(400).send('Submitted groups do not belong to this organisation.');
+  }
+  user.ldapGroups = selectedOrgGroups as string[];
+
   // 1. Create LDAP account
   const ldapResult = await ldap.createUser(user);
 
@@ -283,6 +308,7 @@ router.post('/new', async (req: Request, res: Response) => {
         [cleanGithub, cleanSlack, user.username],
       );
     }
+    await ensureUserOrgMembership(user.username, orgId);
     if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined);
   }
 

@@ -264,3 +264,18 @@ export async function upsertUserOrgMembership(
     ON CONFLICT (username, org_id) DO UPDATE SET role = EXCLUDED.role
   `, [username, orgId, role]);
 }
+
+// Used by scoped create/add flows.  Do not downgrade an existing role: a
+// project lead adding a person to a project must not turn an org admin into a
+// member.  LDAP-derived roles may still be refreshed at login by the explicit
+// upsert above.
+export async function ensureUserOrgMembership(
+  username: string,
+  orgId: number,
+): Promise<void> {
+  await db.query(`
+    INSERT INTO user_orgs (username, org_id, role)
+    VALUES ($1, $2, 'member')
+    ON CONFLICT (username, org_id) DO NOTHING
+  `, [username, orgId]);
+}

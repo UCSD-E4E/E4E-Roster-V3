@@ -67,6 +67,11 @@ router.get('/:id', requireProjectOwnership, async (_req: Request, res: Response)
 router.post('/:id/groups', requireProjectOwnership, async (req: Request, res: Response) => {
   const { ldapGroup } = req.body as { ldapGroup: string };
   if (!ldapGroup) return res.status(400).send('ldapGroup required');
+  const { rows } = await db.query(
+    'SELECT 1 FROM org_groups WHERE org_id = $1 AND ldap_group = $2',
+    [res.locals.currentOrg?.id, ldapGroup],
+  );
+  if (!rows.length) return res.status(400).send('LDAP group does not belong to this organisation');
   await db.query(
     'INSERT INTO project_ldap_groups (project_id, ldap_group) VALUES ($1, $2) ON CONFLICT DO NOTHING',
     [res.locals.project.id, ldapGroup],

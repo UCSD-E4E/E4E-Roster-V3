@@ -1,5 +1,7 @@
 import { AuthUser, OrgMembership } from './user';
 import { WizardState } from '../services/types';
+import type { SystemProvisionResult } from '../ui/system.server';
+import type { RosterProvisionResult } from '../ui/roster-provision.server';
 
 declare global {
   namespace Express {
@@ -16,6 +18,8 @@ declare global {
 declare module 'express-session' {
   interface SessionData {
     wizard?: WizardState;
+    systemProvisionResult?: SystemProvisionResult;
+    rosterProvisionResult?: RosterProvisionResult;
   }
 }
 

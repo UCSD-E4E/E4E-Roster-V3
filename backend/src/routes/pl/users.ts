@@ -3,7 +3,7 @@ import { db } from '../../services/db';
 import * as ldap from '../../services/ldap';
 import { generateUsername } from '../../services/ldap';
 import { triggerGithubInvite } from '../../services/integrations';
-import { isAnyOrgAdmin } from '../../types/user';
+import { ensureUserOrgMembership } from '../../services/db';
 import { NewUser } from '../../services/types';
 
 const router = Router({ mergeParams: true });
@@ -13,11 +13,14 @@ async function requireProjectAccess(req: Request, res: Response, next: NextFunct
   const projectId = parseInt(req.params.projectId, 10);
   if (isNaN(projectId)) { res.status(400).send('Invalid project ID'); return; }
 
-  const isAdmin = req.user && (req.user.isSystemAdmin || isAnyOrgAdmin(req.user));
+  const orgId = res.locals.currentOrg?.id;
+  if (!orgId) { res.status(400).send('No organisation context'); return; }
+  const isAdmin = req.user && (req.user.isSystemAdmin || req.user.isLocalAdmin ||
+    res.locals.currentOrgMembership?.role === 'org_admin');
 
   if (isAdmin) {
     const { rows } = await db.query<{ id: number; name: string }>(
-      'SELECT id, name FROM projects WHERE id = $1', [projectId],
+      'SELECT id, name FROM projects WHERE id = $1 AND org_id = $2', [projectId, orgId],
     );
     if (!rows[0]) { res.status(404).send('Project not found'); return; }
     res.locals.project = rows[0];
@@ -29,8 +32,8 @@ async function requireProjectAccess(req: Request, res: Response, next: NextFunct
     `SELECT DISTINCT p.id, p.name
      FROM projects p
      JOIN project_ldap_groups plg ON plg.project_id = p.id
-     WHERE p.id = $1 AND plg.ldap_group = ANY($2)`,
-    [projectId, userGroups],
+     WHERE p.id = $1 AND p.org_id = $2 AND plg.ldap_group = ANY($3)`,
+    [projectId, orgId, userGroups],
   );
   if (!rows[0]) { res.status(403).send('Access denied to this project'); return; }
   res.locals.project = rows[0];
@@ -48,6 +51,36 @@ async function projectGroups(projectId: number): Promise<string[]> {
   return rows.map((r) => r.ldap_group);
 }
 
+function groupsFromRequest(value: unknown): string[] {
+  return [value ?? []].flat().filter((group): group is string => typeof group === 'string');
+}
+
+function hasOnlyProjectGroups(selectedGroups: string[], projectGroups: string[]): boolean {
+  const allowed = new Set(projectGroups);
+  return selectedGroups.every((group) => allowed.has(group));
+}
+
+async function getProjectMember(
+  username: string,
+  projectId: number,
+  orgId: number,
+): Promise<Record<string, unknown> | null> {
+  const { rows } = await db.query(
+    `SELECT u.username, u.first_name, u.last_name, u.email, u.secondary_email, u.phone, u.role,
+            TO_CHAR(u.expiry_date, 'YYYY-MM-DD') AS expiry_date,
+            u.disabled, u.ldap_groups, u.github_username, u.slack_username
+     FROM users u
+     JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $3
+     WHERE u.username = $1
+       AND EXISTS (
+         SELECT 1 FROM project_ldap_groups plg
+         WHERE plg.project_id = $2 AND plg.ldap_group = ANY(u.ldap_groups)
+       )`,
+    [username, projectId, orgId],
+  );
+  return rows[0] ?? null;
+}
+
 function ninetyDaysFromNow(): string {
   const d = new Date();
   d.setDate(d.getDate() + 90);
@@ -61,6 +94,7 @@ const plBase     = (res: Response, projectId: number | string) =>
 // ── User list ─────────────────────────────────────────────────────
 router.get('/', async (req: Request, res: Response) => {
   const projectId = parseInt(req.params.projectId, 10);
+  const orgId = res.locals.currentOrg?.id as number;
   const groups = await projectGroups(projectId);
   if (groups.length === 0) {
     return res.render('pl/users/index', {
@@ -69,11 +103,13 @@ router.get('/', async (req: Request, res: Response) => {
     });
   }
   const { rows: users } = await db.query(
-    `SELECT username, first_name, last_name, email, role,
+    `SELECT u.username, u.first_name, u.last_name, u.email, u.role,
             TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
-            disabled, ldap_groups, github_username, slack_username
-     FROM users WHERE ldap_groups && $1 ORDER BY last_name, first_name`,
-    [groups],
+            u.disabled, u.ldap_groups, u.github_username, u.slack_username
+     FROM users u
+     JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $2
+     WHERE u.ldap_groups && $1 ORDER BY u.last_name, u.first_name`,
+    [groups, orgId],
   );
   res.render('pl/users/index', { project: res.locals.project, users });
 });
@@ -82,15 +118,10 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
   const projectId = parseInt(req.params.projectId, 10);
-  const { rows } = await db.query(
-    `SELECT username, first_name, last_name, email, secondary_email, phone, role,
-            TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
-            disabled, ldap_groups, github_username, slack_username
-     FROM users WHERE username = $1`,
-    [username],
-  );
-  if (!rows.length) return res.status(404).send('User not found');
-  const user = rows[0] as { ldap_groups: string[]; [k: string]: unknown };
+  const orgId = res.locals.currentOrg?.id as number;
+  const member = await getProjectMember(username, projectId, orgId);
+  if (!member) return res.status(404).send('Project member not found');
+  const user = member as { ldap_groups: string[]; [k: string]: unknown };
   if (user.ldap_groups.includes(adminGroup())) {
     return res.status(403).send('Project leads cannot edit admin users.');
   }
@@ -106,20 +137,22 @@ router.get('/:username/edit', async (req: Request, res: Response) => {
 router.post('/:username/edit', async (req: Request, res: Response) => {
   const { username } = req.params;
   const projectId = parseInt(req.params.projectId, 10);
-  const { rows } = await db.query<{ ldap_groups: string[] }>(
-    'SELECT ldap_groups FROM users WHERE username = $1', [username],
-  );
-  if (!rows.length) return res.status(404).send('User not found');
-  if (rows[0].ldap_groups.includes(adminGroup())) {
+  const orgId = res.locals.currentOrg?.id as number;
+  const member = await getProjectMember(username, projectId, orgId) as { ldap_groups: string[] } | null;
+  if (!member) return res.status(404).send('Project member not found');
+  if (member.ldap_groups.includes(adminGroup())) {
     return res.status(403).send('Project leads cannot edit admin users.');
   }
 
   const { githubUsername, slackUsername, secondaryEmail, phone, disabled, sshKeys } =
     req.body as Record<string, string>;
-  const selectedProjectGroups: string[] = [req.body.groups ?? []].flat();
+  const selectedProjectGroups = groupsFromRequest(req.body.groups);
   const sshPublicKeys = (sshKeys || '').split('\n').map((k: string) => k.trim()).filter(Boolean);
   const projGroups = await projectGroups(projectId);
-  const nonProjectGroups = rows[0].ldap_groups.filter((g) => !projGroups.includes(g));
+  if (!hasOnlyProjectGroups(selectedProjectGroups, projGroups)) {
+    return res.status(400).send('Submitted groups do not belong to this project.');
+  }
+  const nonProjectGroups = member.ldap_groups.filter((g) => !projGroups.includes(g));
   const mergedGroups = [...new Set([...nonProjectGroups, ...selectedProjectGroups])];
 
   const [groupResult, sshResult] = await Promise.all([
@@ -202,8 +235,11 @@ router.get('/add', async (req: Request, res: Response) => {
 router.post('/add', async (req: Request, res: Response) => {
   const projectId = parseInt(req.params.projectId, 10);
   const { username } = req.body as Record<string, string>;
-  const selectedProjectGroups: string[] = [req.body.groups ?? []].flat();
+  const selectedProjectGroups = groupsFromRequest(req.body.groups);
   const projGroups = await projectGroups(projectId);
+  if (!hasOnlyProjectGroups(selectedProjectGroups, projGroups) || selectedProjectGroups.length === 0) {
+    return res.status(400).send('Choose at least one group belonging to this project.');
+  }
 
   const { rows } = await db.query<{ ldap_groups: string[] }>(
     `SELECT ldap_groups FROM users WHERE username = $1`, [username],
@@ -224,6 +260,7 @@ router.post('/add', async (req: Request, res: Response) => {
     `UPDATE users SET ldap_groups = $1, updated_at = NOW() WHERE username = $2`,
     [mergedGroups, username],
   );
+  await ensureUserOrgMembership(username, res.locals.currentOrg?.id as number);
 
   await db.query(
     `INSERT INTO audit_log (actor, action, target_username, details, org_id)
@@ -259,8 +296,11 @@ router.post('/new', async (req: Request, res: Response) => {
 
   // Enforce 90-day expiry and student role server-side — PLs cannot change these
   const expiryDate = ninetyDaysFromNow();
-  // Only allow groups belonging to this project
-  const chosenGroups = [ldapGroups ?? []].flat().filter((g) => projGroups.includes(g));
+  const selectedProjectGroups = groupsFromRequest(ldapGroups);
+  if (!hasOnlyProjectGroups(selectedProjectGroups, projGroups) || selectedProjectGroups.length === 0) {
+    return res.status(400).send('Choose at least one group belonging to this project.');
+  }
+  const chosenGroups = selectedProjectGroups;
 
   const user: NewUser = {
     username: generateUsername(cleanFirst, cleanLast, cleanEmail),
@@ -291,6 +331,7 @@ router.post('/new', async (req: Request, res: Response) => {
        cleanSecondary, cleanPhone, user.role, user.expiryDate, user.ldapGroups,
        cleanGithub, cleanSlack],
     );
+    await ensureUserOrgMembership(user.username, res.locals.currentOrg?.id as number);
     if (cleanGithub) triggerGithubInvite(cleanGithub, res.locals.currentOrg?.id as number | undefined);
   }
 
@@ -311,11 +352,10 @@ router.post('/new', async (req: Request, res: Response) => {
 // ── Audit log ────────────────────────────────────────────────────
 router.get('/:username/audit', async (req: Request, res: Response) => {
   const { username } = req.params;
-  const { rows: [user] } = await db.query(
-    'SELECT username, first_name, last_name, ldap_groups FROM users WHERE username = $1',
-    [username],
-  );
-  if (!user) return res.status(404).send('User not found');
+  const projectId = parseInt(req.params.projectId, 10);
+  const orgId = res.locals.currentOrg?.id as number;
+  const user = await getProjectMember(username, projectId, orgId);
+  if (!user) return res.status(404).send('Project member not found');
   if ((user.ldap_groups as string[]).includes(adminGroup())) {
     return res.status(403).send('Access denied.');
   }
