@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Issuer } from 'openid-client';
 import bcrypt from 'bcryptjs';
-import { setupPassport } from './auth';
+import { setupPassport, setupPassportSession } from './auth';
 import { createApp } from './app';
 import { db, runMigrations } from './services/db';
 import { startSyncSchedule } from './services/sync';
@@ -38,6 +38,10 @@ async function bootstrap(): Promise<void> {
   if (!SESSION_SECRET) {
     throw new Error('SESSION_SECRET env var is required');
   }
+
+  // The break-glass local-login route still needs Passport session support
+  // when OIDC discovery is skipped for a disposable local environment.
+  setupPassportSession();
 
   // TEMPORARY: see DEBUG_CHANGES.md — skip OIDC discovery for local testing without Authentik
   if (SKIP_OIDC === 'true') {

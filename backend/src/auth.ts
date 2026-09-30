@@ -15,9 +15,6 @@ export function setupPassport(client: Client): void {
         done: (err: Error | null, user?: AuthUser) => void,
       ) => {
         try {
-          console.log('[auth] tokenSet received, idToken claims:', JSON.stringify(_tokenSet.claims(), null, 2));
-          console.log('[auth] userinfo from Authentik:', JSON.stringify(userinfo, null, 2));
-
           const groups = ((userinfo as Record<string, unknown>).groups as string[]) ?? [];
           const systemAdminGroup = process.env.SYSTEM_ADMIN_GROUP ?? 'system-admin';
           const username = (userinfo.preferred_username as string) ?? userinfo.sub;
@@ -42,6 +39,12 @@ export function setupPassport(client: Client): void {
     ),
   );
 
+}
+
+// Session serialisation is also needed by the break-glass local-login route.
+// Keep it independent from OIDC setup so SKIP_OIDC=true remains usable for a
+// disposable local environment.
+export function setupPassportSession(): void {
   passport.serializeUser((user: Express.User, done) => {
     done(null, user);
   });
