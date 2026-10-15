@@ -59,6 +59,7 @@ export interface ProjectMemberEdit {
   secondaryEmail: string | null;
   phone: string | null;
   disabled: boolean;
+  expiryDate: string | null;
   ldapGroups: string[];
   githubUsername: string | null;
   slackUsername: string | null;
@@ -247,10 +248,19 @@ export async function getProjectMemberEdit(
   const { rows } = await db.query<{
     username: string; first_name: string | null; last_name: string | null; email: string | null;
     secondary_email: string | null; phone: string | null; disabled: boolean; ldap_groups: string[];
+    expiry_date: string | null; is_org_admin: boolean;
     github_username: string | null; slack_username: string | null;
   }>(`
     SELECT u.username, u.first_name, u.last_name, u.email, u.secondary_email, u.phone,
-           u.disabled, u.ldap_groups, u.github_username, u.slack_username
+           u.disabled, u.ldap_groups, TO_CHAR(u.expiry_date, 'YYYY-MM-DD') AS expiry_date,
+           u.github_username, u.slack_username,
+           EXISTS (
+             SELECT 1 FROM user_orgs admin_membership
+             WHERE admin_membership.username = u.username AND admin_membership.role = 'org_admin'
+           ) OR EXISTS (
+             SELECT 1 FROM org_ldap_group_mappings admin_mapping
+             WHERE admin_mapping.role = 'org_admin' AND admin_mapping.ldap_group = ANY(u.ldap_groups)
+           ) AS is_org_admin
     FROM users u JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $3
     WHERE u.username = $1 AND EXISTS (
       SELECT 1 FROM project_ldap_groups plg
@@ -259,13 +269,16 @@ export async function getProjectMemberEdit(
   `, [username, projectId, context.org.id]);
   const row = rows[0];
   if (!row) return null;
-  if ((row.ldap_groups ?? []).includes(process.env.ADMIN_GROUP ?? 'e4e-admin')) {
-    throw data('Project leads cannot edit administrator accounts.', { status: 403 });
+  if (row.is_org_admin || (row.ldap_groups ?? []).some((group) =>
+    group === (process.env.SYSTEM_ADMIN_GROUP ?? 'system-admin') ||
+    group === (process.env.ADMIN_GROUP ?? 'e4e-admin'))) {
+    throw data('Administrator accounts cannot be managed from a project.', { status: 403 });
   }
   const ldapUser = await ldap.getUser(username).catch(() => null);
   return { project, member: {
     username: row.username, firstName: row.first_name, lastName: row.last_name, email: row.email,
     secondaryEmail: row.secondary_email, phone: row.phone, disabled: row.disabled,
+    expiryDate: row.expiry_date,
     ldapGroups: row.ldap_groups ?? [], githubUsername: row.github_username,
     slackUsername: row.slack_username, sshPublicKeys: ldapUser?.sshPublicKeys ?? [],
   } };

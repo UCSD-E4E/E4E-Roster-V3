@@ -13,6 +13,21 @@ export interface ProjectMemberUpdate {
   phone: string;
   disabled: string;
   sshKeys: string;
+  expiryDate?: string;
+}
+
+/** An omitted field preserves the current date; a blank field clears it. */
+export function resolveProjectMemberExpiryDate(submitted: string | undefined, current: string | null): string | null {
+  if (submitted === undefined) return current;
+  const expiryDate = submitted.trim() || null;
+  if (expiryDate) {
+    const parsedDate = new Date(`${expiryDate}T00:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expiryDate) ||
+        Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== expiryDate) {
+      throw data('Enter a valid expiration date.', { status: 400 });
+    }
+  }
+  return expiryDate;
 }
 
 /** Add an existing directory account to an accessible project's LDAP groups. */
@@ -61,6 +76,7 @@ export async function updateProjectMember(
 ): Promise<void> {
   const edit = await getProjectMemberEdit(context, projectId, username);
   if (!edit) throw data('Project member not found.', { status: 404 });
+  const expiryDate = resolveProjectMemberExpiryDate(fields.expiryDate, edit.member.expiryDate);
   const selectedGroups = [...new Set(fields.groups)];
   if (!selectedGroups.every((group) => edit.project.groups.includes(group))) {
     throw data('Submitted groups do not belong to this project.', { status: 400 });
@@ -68,11 +84,14 @@ export async function updateProjectMember(
   const nonProjectGroups = edit.member.ldapGroups.filter((group) => !edit.project.groups.includes(group));
   const mergedGroups = [...new Set([...nonProjectGroups, ...selectedGroups])];
   const sshPublicKeys = fields.sshKeys.split('\n').map((key) => key.trim()).filter(Boolean);
-  const [groupResult, sshResult] = await Promise.all([
+  const [groupResult, sshResult, expiryResult] = await Promise.all([
     ldap.updateUserGroups(username, mergedGroups),
     ldap.setSshKeys(username, sshPublicKeys),
+    expiryDate !== edit.member.expiryDate
+      ? ldap.updateUserExpiry(username, expiryDate)
+      : Promise.resolve({ status: 'skipped', message: 'Expiration unchanged.' }),
   ]);
-  const ldapError = [groupResult, sshResult].find((result) => result.status === 'failed')?.message;
+  const ldapError = [groupResult, sshResult, expiryResult].find((result) => result.status === 'failed')?.message;
   if (ldapError) throw data(ldapError, { status: 400 });
   const githubUsername = fields.githubUsername.trim() || null;
   const slackUsername = fields.slackUsername.trim() || null;
@@ -80,13 +99,13 @@ export async function updateProjectMember(
   const phone = fields.phone.trim() || null;
   await db.query(
     `UPDATE users SET ldap_groups=$1, github_username=$2, slack_username=$3,
-       secondary_email=$4, phone=$5, disabled=$6, updated_at=NOW() WHERE username=$7`,
-    [mergedGroups, githubUsername, slackUsername, secondaryEmail, phone, fields.disabled === 'true', username],
+       secondary_email=$4, phone=$5, disabled=$6, expiry_date=$7, updated_at=NOW() WHERE username=$8`,
+    [mergedGroups, githubUsername, slackUsername, secondaryEmail, phone, fields.disabled === 'true', expiryDate, username],
   );
   if (githubUsername) triggerGithubInvite(githubUsername, context.org.id);
   await db.query(
     `INSERT INTO audit_log (actor, action, target_username, details, org_id)
      VALUES ($1, 'pl_edit_user', $2, $3, $4)`,
-    [context.user.username, username, JSON.stringify({ projectId, groups: mergedGroups, sshKeyCount: sshPublicKeys.length }), context.org.id],
+    [context.user.username, username, JSON.stringify({ projectId, groups: mergedGroups, expiryDate, sshKeyCount: sshPublicKeys.length }), context.org.id],
   );
 }
