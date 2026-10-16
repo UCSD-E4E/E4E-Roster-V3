@@ -16,7 +16,7 @@
     "express-rate-limit": "^8.5.2",
     "express-session": "^1.18.0",
     "helmet": "^8.1.0",
-    "ldapts": "^4.2.6",
+    "ldapts": "^8.1.8",
     "nunjucks": "^3.2.4",
     "openid-client": "^4.9.1",
     "passport": "^0.7.0",
