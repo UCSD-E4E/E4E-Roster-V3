@@ -1,9 +1,28 @@
 import 'dotenv/config';
 import { Issuer } from 'openid-client';
-import { setupPassport } from './auth';
+import bcrypt from 'bcryptjs';
+import { setupPassport, setupPassportSession } from './auth';
 import { createApp } from './app';
-import { runMigrations } from './services/db';
+import { db, runMigrations } from './services/db';
 import { startSyncSchedule } from './services/sync';
+
+// Creates or updates the break-glass local admin from env vars on every startup.
+// Remove BOOTSTRAP_ADMIN_USERNAME / BOOTSTRAP_ADMIN_PASSWORD from the environment
+// once a real system admin has logged in via SSO and can manage local_admins through the UI.
+async function bootstrapLocalAdmin(): Promise<void> {
+  const username = process.env.BOOTSTRAP_ADMIN_USERNAME;
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  if (!username || !password) return;
+
+  const hash = await bcrypt.hash(password, 12);
+  await db.query(
+    `INSERT INTO local_admins (username, password_hash, enabled)
+     VALUES ($1, $2, TRUE)
+     ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, enabled = TRUE, updated_at = NOW()`,
+    [username, hash],
+  );
+  console.log(`[bootstrap] Local admin '${username}' ready. Remove BOOTSTRAP_ADMIN_* env vars after first SSO login.`);
+}
 
 async function bootstrap(): Promise<void> {
   const {
@@ -19,6 +38,10 @@ async function bootstrap(): Promise<void> {
   if (!SESSION_SECRET) {
     throw new Error('SESSION_SECRET env var is required');
   }
+
+  // The break-glass local-login route still needs Passport session support
+  // when OIDC discovery is skipped for a disposable local environment.
+  setupPassportSession();
 
   // TEMPORARY: see DEBUG_CHANGES.md — skip OIDC discovery for local testing without Authentik
   if (SKIP_OIDC === 'true') {
@@ -45,6 +68,7 @@ async function bootstrap(): Promise<void> {
   }
 
   await runMigrations();
+  await bootstrapLocalAdmin();
   startSyncSchedule();
 
   const app = createApp();

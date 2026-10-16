@@ -118,12 +118,15 @@ async function applyTeamMappings(
 /**
  * Invites a GitHub user to the org if they are not already a member or pending.
  * Returns 'invited', 'already_pending', or 'failed'.
+ *
+ * Pass orgId to use per-org credentials; omit to fall back to env vars.
  */
 export async function ensureOrgMember(
   githubUsername: string,
+  orgId?: number,
 ): Promise<'invited' | 'already_pending' | 'failed'> {
   try {
-    await inviteToOrg(githubUsername);
+    await inviteToOrg(githubUsername, [], orgId);
     console.log(`[github] invited ${githubUsername} to org`);
     return 'invited';
   } catch (err: unknown) {

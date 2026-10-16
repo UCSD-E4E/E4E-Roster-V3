@@ -2,6 +2,29 @@ import { Client, Attribute, Change } from 'ldapts';
 import crypto from 'crypto';
 import { NewUser, ProvisionResult, SystemStatus } from './types';
 
+/**
+ * Narrow test seam for routes that otherwise require a live directory. It is
+ * unset in normal execution and deliberately exposes only the operations the
+ * integration suite needs to control.
+ */
+export interface LdapTestOverrides {
+  listUsers?: () => Promise<LdapUser[]>;
+  listGroups?: () => Promise<string[]>;
+  createGroup?: (name: string) => Promise<ProvisionResult>;
+  createUser?: (user: NewUser) => Promise<ProvisionResult & { tempPassword?: string }>;
+  addSshKey?: (username: string, publicKey: string) => Promise<ProvisionResult>;
+  setSshKeys?: (username: string, publicKeys: string[]) => Promise<ProvisionResult>;
+  updateUserGroups?: (username: string, groups: string[]) => Promise<ProvisionResult>;
+  updateUserProfile?: (username: string, fields: { firstName: string; lastName: string; email: string }) => Promise<ProvisionResult>;
+  updateUserExpiry?: (username: string, expiryDate: string | null) => Promise<ProvisionResult>;
+}
+
+let testOverrides: LdapTestOverrides | undefined;
+
+export function setLdapTestOverrides(overrides: LdapTestOverrides | undefined): void {
+  testOverrides = overrides;
+}
+
 /** Generates username: first initial + . + last name + . + 3-digit hash of email
  *  e.g. firstName="Sean", lastName="Perry", email="shperry@ucsd.edu" → s.perry.543
  */
@@ -127,6 +150,7 @@ function entryToUser(e: { dn: string; [k: string]: unknown }): LdapUser {
 // ── Read operations ───────────────────────────────────────────────
 
 export async function listUsers(): Promise<LdapUser[]> {
+  if (testOverrides?.listUsers) return testOverrides.listUsers();
   return withClient(async (client) => {
     const t1 = Date.now();
     const { searchEntries } = await client.search(process.env.LDAP_USERS_DN!, {
@@ -166,6 +190,7 @@ export async function checkUser(username: string): Promise<SystemStatus> {
 }
 
 export async function listGroups(): Promise<string[]> {
+  if (testOverrides?.listGroups) return testOverrides.listGroups();
   return withClient(async (client) => {
     const { searchEntries } = await client.search(process.env.LDAP_GROUPS_DN!, {
       scope: 'sub',
@@ -180,6 +205,7 @@ export async function listGroups(): Promise<string[]> {
 // ── Create operations ─────────────────────────────────────────────
 
 export async function createGroup(name: string): Promise<ProvisionResult> {
+  if (testOverrides?.createGroup) return testOverrides.createGroup(name);
   const existing = await listGroups();
   if (existing.includes(name)) {
     return { status: 'already_exists', message: `Group "${name}" already exists` };
@@ -202,6 +228,7 @@ export async function createGroup(name: string): Promise<ProvisionResult> {
 export async function createUser(
   user: NewUser,
 ): Promise<ProvisionResult & { tempPassword?: string }> {
+  if (testOverrides?.createUser) return testOverrides.createUser(user);
   const existing = await checkUser(user.username);
   if (existing.exists) {
     return { status: 'already_exists', message: `${user.username} already exists in LDAP` };
@@ -286,6 +313,7 @@ export async function updateUserExpiry(
   username: string,
   expiryDate: string | null,
 ): Promise<ProvisionResult> {
+  if (testOverrides?.updateUserExpiry) return testOverrides.updateUserExpiry(username, expiryDate);
   try {
     return await withClient(async (client) => {
       const dn = await getUserDN(client, username);
@@ -307,10 +335,37 @@ export async function updateUserExpiry(
   }
 }
 
+// Updates the user's name and primary (institutional) email in LDAP.
+// Does NOT change sAMAccountName/username — usernames are immutable once generated.
+// TODO: once the extended attribute strategy is decided (see updateUserLdapFields below),
+// fold secondaryEmail/phone/role/githubUsername/slackId into this function instead of
+// re-enabling updateUserLdapFields as a separate call — one LDAP modify per edit, not two.
+export async function updateUserProfile(
+  username: string,
+  fields: { firstName: string; lastName: string; email: string },
+): Promise<ProvisionResult> {
+  if (testOverrides?.updateUserProfile) return testOverrides.updateUserProfile(username, fields);
+  try {
+    return await withClient(async (client) => {
+      const dn = await getUserDN(client, username);
+      if (!dn) return { status: 'failed', message: `User ${username} not found` };
+      await client.modify(dn, [
+        new Change({ operation: 'replace', modification: new Attribute({ type: 'givenName', values: [fields.firstName] }) }),
+        new Change({ operation: 'replace', modification: new Attribute({ type: 'sn', values: [fields.lastName] }) }),
+        new Change({ operation: 'replace', modification: new Attribute({ type: 'mail', values: [fields.email] }) }),
+      ]);
+      return { status: 'success', message: `Updated profile for ${username}` };
+    });
+  } catch (err: unknown) {
+    return { status: 'failed', message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function updateUserGroups(
   username: string,
   groupNames: string[],
 ): Promise<ProvisionResult> {
+  if (testOverrides?.updateUserGroups) return testOverrides.updateUserGroups(username, groupNames);
   try {
     return await withClient(async (client) => {
       const { searchEntries } = await client.search(process.env.LDAP_USERS_DN!, {
@@ -373,6 +428,7 @@ export async function removeUserFromGroup(username: string, groupName: string): 
 }
 
 export async function addSshKey(username: string, publicKey: string): Promise<ProvisionResult> {
+  if (testOverrides?.addSshKey) return testOverrides.addSshKey(username, publicKey);
   const keyError = validateEd25519Key(publicKey);
   if (keyError) return { status: 'failed', message: keyError };
   try {
@@ -391,6 +447,7 @@ export async function addSshKey(username: string, publicKey: string): Promise<Pr
 }
 
 export async function setSshKeys(username: string, publicKeys: string[]): Promise<ProvisionResult> {
+  if (testOverrides?.setSshKeys) return testOverrides.setSshKeys(username, publicKeys);
   for (const key of publicKeys) {
     const keyError = validateEd25519Key(key);
     if (keyError) return { status: 'failed', message: `Invalid key "${key.slice(0, 30)}...": ${keyError}` };
@@ -410,7 +467,9 @@ export async function setSshKeys(username: string, publicKeys: string[]): Promis
   }
 }
 
-// TODO: re-enable once extended attribute strategy is decided (Exchange schema vs custom attributes)
+// TODO: re-enable once extended attribute strategy is decided (Exchange schema vs custom attributes).
+// When this happens, merge these fields into updateUserProfile above instead of keeping
+// this as a separate function/call — avoids a second LDAP round-trip per user edit.
 /*
 export async function updateUserLdapFields(
   username: string,

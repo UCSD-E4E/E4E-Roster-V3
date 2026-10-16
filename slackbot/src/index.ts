@@ -1,7 +1,10 @@
 import 'dotenv/config';
 import http from 'http';
+import { createDecipheriv } from 'crypto';
 import { App } from '@slack/bolt';
-import type { WebClient } from '@slack/web-api';
+import { WebClient } from '@slack/web-api';
+import type { WebClient as WebClientType } from '@slack/web-api';
+import { db } from './db';
 import { syncSlack } from './sync';
 import { sendPostSyncNotifications } from './notify';
 import { registerCheckCommand } from './commands/check';
@@ -49,9 +52,51 @@ bootstrap().catch((err) => {
   process.exit(1);
 });
 
+// ── Per-org WebClient lookup ──────────────────────────────────────────────────
+
+// AES-256-GCM decrypt — must stay in sync with backend/src/services/crypto.ts (decrypt).
+// Duplicated here because the slackbot is a separate Docker service with its own package.
+function decryptField(ciphertext: string): string {
+  const hexKey = process.env.ENCRYPTION_KEY;
+  if (!hexKey || hexKey.length !== 64) throw new Error('ENCRYPTION_KEY not set');
+  const key  = Buffer.from(hexKey, 'hex');
+  const data = Buffer.from(ciphertext, 'base64');
+  const iv   = data.subarray(0, 12);
+  const tag  = data.subarray(12, 28);
+  const enc  = data.subarray(28);
+  const dc   = createDecipheriv('aes-256-gcm', key, iv);
+  dc.setAuthTag(tag);
+  return Buffer.concat([dc.update(enc), dc.final()]).toString('utf8');
+}
+
+/**
+ * Returns a WebClient scoped to the given org's bot token.
+ * Falls back to the global SLACK_BOT_TOKEN env var if no orgId is supplied.
+ */
+async function getClientForOrg(defaultClient: WebClientType, orgId?: number): Promise<WebClientType | null> {
+  if (orgId === undefined) return defaultClient;
+
+  const { rows } = await db.query<{ config: Record<string, string>; enabled: boolean }>(
+    'SELECT config, enabled FROM org_integrations WHERE org_id = $1 AND service = $2',
+    [orgId, 'slack'],
+  );
+  const row = rows[0];
+  if (!row?.enabled || !row.config.botToken) {
+    console.warn(`[slackbot] No enabled Slack credentials for org ${orgId}`);
+    return null;
+  }
+  try {
+    const token = decryptField(row.config.botToken);
+    return new WebClient(token);
+  } catch (err) {
+    console.warn(`[slackbot] Failed to decrypt credentials for org ${orgId}:`, err);
+    return null;
+  }
+}
+
 // ── Internal HTTP server (service-to-service only, never public) ──
 
-function startInternalServer(client: WebClient): void {
+function startInternalServer(defaultClient: WebClientType): void {
   const port = parseInt(process.env.SLACK_INTERNAL_PORT ?? '3002', 10);
 
   const server = http.createServer(async (req, res) => {
@@ -64,6 +109,13 @@ function startInternalServer(client: WebClient): void {
     }
 
     if (req.method === 'GET' && url.pathname === '/channels') {
+      const orgId = url.searchParams.get('orgId') ? parseInt(url.searchParams.get('orgId')!, 10) : undefined;
+      const client = await getClientForOrg(defaultClient, orgId);
+      if (!client) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Slack not configured for this org' }));
+        return;
+      }
       try {
         const result = await client.conversations.list({
           types: 'public_channel',
@@ -85,10 +137,21 @@ function startInternalServer(client: WebClient): void {
       req.on('data', (chunk) => (body += chunk));
       req.on('end', async () => {
         try {
-          const { channelId, slackUserId } = JSON.parse(body) as { channelId?: string; slackUserId?: string };
+          const { channelId, slackUserId, orgId: rawOrgId } = JSON.parse(body) as {
+            channelId?: string;
+            slackUserId?: string;
+            orgId?: number;
+          };
           if (!channelId || !slackUserId) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'channelId and slackUserId required' }));
+            return;
+          }
+          const orgId = rawOrgId !== undefined ? Number(rawOrgId) : undefined;
+          const client = await getClientForOrg(defaultClient, orgId);
+          if (!client) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Slack not configured for this org' }));
             return;
           }
           // Ensure the bot is in the channel before inviting (public channels only)
