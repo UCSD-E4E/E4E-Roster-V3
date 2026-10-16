@@ -277,6 +277,7 @@ function routesFor(context: RosterUiContext, req: ExpressRequest): RouteObject[]
             slackUsername: String(form.get('slackUsername') ?? ''), secondaryEmail: String(form.get('secondaryEmail') ?? ''),
             phone: String(form.get('phone') ?? ''), disabled: String(form.get('disabled') ?? 'false'),
             sshKeys: String(form.get('sshKeys') ?? ''),
+            expiryDate: form.has('expiryDate') ? String(form.get('expiryDate') ?? '') : undefined,
           });
           return redirect(`/projects/${projectId}`);
         }),

@@ -81,6 +81,9 @@ before(async () => {
        ('alpha-admin', 'Alpha', 'Admin', 'alpha-admin@example.test', ARRAY['alpha-team']),
        ('beta-admin', 'Beta', 'Admin', 'beta-admin@example.test', ARRAY['beta-team']),
        ('alpha-lead', 'Alpha', 'Lead', 'alpha-lead@example.test', ARRAY['alpha-team']),
+       ('alpha-peer-lead', 'Alpha', 'Peer Lead', 'alpha-peer-lead@example.test', ARRAY['alpha-team']),
+       ('alpha-system-admin', 'Alpha', 'System Admin', 'alpha-system-admin@example.test', ARRAY['alpha-team', 'system-admin']),
+       ('alpha-cross-admin', 'Alpha', 'Cross Admin', 'alpha-cross-admin@example.test', ARRAY['alpha-team']),
        ('alpha-member', 'Alpha', 'Member', 'alpha-member@example.test', ARRAY['alpha-team', 'shared']),
        ('beta-member', 'Beta', 'Member', 'beta-member@example.test', ARRAY['beta-team', 'shared']),
        ('local-admin', 'Local', 'Admin', 'local-admin@example.test', ARRAY[]::text[]),
@@ -89,6 +92,8 @@ before(async () => {
   await db.query(
     `INSERT INTO user_orgs (username, org_id, role) VALUES
        ('alpha-admin', $1, 'org_admin'), ('alpha-lead', $1, 'project_lead'),
+       ('alpha-peer-lead', $1, 'project_lead'), ('alpha-system-admin', $1, 'member'),
+       ('alpha-cross-admin', $1, 'member'), ('alpha-cross-admin', $2, 'org_admin'),
        ('alpha-member', $1, 'member'), ('beta-admin', $2, 'org_admin'),
        ('beta-member', $2, 'member')`,
     [alpha.id, beta.id],
@@ -733,6 +738,119 @@ test('the React project member editor saves only the eligible project member and
   }
 });
 
+test('a project lead can change and clear another project lead\'s expiration date', async () => {
+  const expiryUpdates: Array<{ username: string; expiryDate: string | null }> = [];
+  await db.query("UPDATE users SET expiry_date = '2030-01-01' WHERE username = 'alpha-peer-lead'");
+  ldap.setLdapTestOverrides({
+    updateUserGroups: async () => ({ status: 'success', message: 'updated' }),
+    setSshKeys: async () => ({ status: 'success', message: 'updated' }),
+    updateUserExpiry: async (username, expiryDate) => {
+      expiryUpdates.push({ username, expiryDate });
+      return { status: 'success', message: 'updated' };
+    },
+  });
+  try {
+    const path = `/orgs/alpha/v2/projects/${fixture.alphaProjectId}/members/alpha-peer-lead/edit`;
+    const edit = await request(path, 'alpha-lead');
+    assert.equal(edit.status, 200);
+    assert.match(await edit.text(), /name="expiryDate"[^>]*value="2030-01-01"/);
+
+    const changed = await request(path, 'alpha-lead', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'groups=alpha-team&disabled=false&sshKeys=&expiryDate=2031-02-28',
+    });
+    assert.equal(changed.status, 302);
+    assert.deepEqual(expiryUpdates, [{ username: 'alpha-peer-lead', expiryDate: '2031-02-28' }]);
+    const { rows: [saved] } = await db.query<{ expiry_date: string }>(
+      "SELECT TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date FROM users WHERE username = 'alpha-peer-lead'",
+    );
+    assert.equal(saved.expiry_date, '2031-02-28');
+
+    const cleared = await request(path, 'alpha-lead', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'groups=alpha-team&disabled=false&sshKeys=&expiryDate=',
+    });
+    assert.equal(cleared.status, 302);
+    assert.deepEqual(expiryUpdates[1], { username: 'alpha-peer-lead', expiryDate: null });
+    const { rows: [afterClear] } = await db.query<{ expiry_date: Date | null }>(
+      "SELECT expiry_date FROM users WHERE username = 'alpha-peer-lead'",
+    );
+    assert.equal(afterClear.expiry_date, null);
+  } finally {
+    ldap.setLdapTestOverrides(undefined);
+    await db.query("UPDATE users SET expiry_date = NULL WHERE username = 'alpha-peer-lead'");
+  }
+});
+
+test('project leads cannot edit organization or system administrators, including admins of another org', async () => {
+  let ldapWrites = 0;
+  ldap.setLdapTestOverrides({
+    updateUserGroups: async () => { ldapWrites++; return { status: 'success', message: 'updated' }; },
+    setSshKeys: async () => { ldapWrites++; return { status: 'success', message: 'updated' }; },
+    updateUserExpiry: async () => { ldapWrites++; return { status: 'success', message: 'updated' }; },
+  });
+  try {
+    for (const username of ['alpha-admin', 'alpha-system-admin', 'alpha-cross-admin']) {
+      const path = `/orgs/alpha/v2/projects/${fixture.alphaProjectId}/members/${username}/edit`;
+      assert.equal((await request(path, 'alpha-lead')).status, 403, `${username} GET`);
+      const update = await request(path, 'alpha-lead', {
+        method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'groups=alpha-team&disabled=false&sshKeys=&expiryDate=2032-01-01',
+      });
+      assert.equal(update.status, 403, `${username} POST`);
+    }
+    assert.equal(ldapWrites, 0);
+    const { rows } = await db.query<{ username: string; expiry_date: Date | null }>(
+      "SELECT username, expiry_date FROM users WHERE username IN ('alpha-admin', 'alpha-system-admin', 'alpha-cross-admin')",
+    );
+    assert.ok(rows.every((row) => row.expiry_date === null));
+  } finally {
+    ldap.setLdapTestOverrides(undefined);
+  }
+});
+
+test('project member expiration rejects invalid dates before LDAP writes', async () => {
+  let ldapWrites = 0;
+  ldap.setLdapTestOverrides({
+    updateUserGroups: async () => { ldapWrites++; return { status: 'success', message: 'updated' }; },
+    setSshKeys: async () => { ldapWrites++; return { status: 'success', message: 'updated' }; },
+    updateUserExpiry: async () => { ldapWrites++; return { status: 'success', message: 'updated' }; },
+  });
+  try {
+    const response = await request(`/orgs/alpha/v2/projects/${fixture.alphaProjectId}/members/alpha-member/edit`, 'alpha-lead', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'groups=alpha-team&disabled=false&sshKeys=&expiryDate=2031-02-30',
+    });
+    assert.equal(response.status, 400);
+    assert.match(await response.text(), /valid expiration date/);
+    assert.equal(ldapWrites, 0);
+  } finally {
+    ldap.setLdapTestOverrides(undefined);
+  }
+});
+
+test('a failed directory expiration update does not change the roster date', async () => {
+  ldap.setLdapTestOverrides({
+    updateUserGroups: async () => ({ status: 'success', message: 'updated' }),
+    setSshKeys: async () => ({ status: 'success', message: 'updated' }),
+    updateUserExpiry: async () => ({ status: 'failed', message: 'Directory rejected the expiration date.' }),
+  });
+  try {
+    const response = await request(`/orgs/alpha/v2/projects/${fixture.alphaProjectId}/members/alpha-member/edit`, 'alpha-lead', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'groups=alpha-team&disabled=false&sshKeys=&expiryDate=2031-01-01',
+    });
+    assert.equal(response.status, 400);
+    assert.match(await response.text(), /Directory rejected the expiration date/);
+    const { rows: [member] } = await db.query<{ expiry_date: Date | null }>(
+      "SELECT expiry_date FROM users WHERE username = 'alpha-member'",
+    );
+    assert.equal(member.expiry_date, null);
+  } finally {
+    ldap.setLdapTestOverrides(undefined);
+  }
+});
+
 test('the React settings workspace requires an organisation admin', async () => {
   const denied = await request('/orgs/alpha/v2/settings', 'alpha-lead');
   assert.equal(denied.status, 403);
@@ -1038,7 +1156,7 @@ test('the React project add action preserves non-project groups and repairs miss
   let ldapGroups: string[] | undefined;
   ldap.setLdapTestOverrides({ updateUserGroups: async (_username, groups) => {
     ldapGroups = groups;
-    return { status: 'success' };
+    return { status: 'success', message: 'updated' };
   } });
   try {
     const response = await request(`/orgs/alpha/v2/projects/${fixture.alphaProjectId}/members/add?q=missing-org-row`, 'alpha-lead', {
@@ -1062,7 +1180,7 @@ test('the React project add action rejects a forged group before LDAP is called'
   let ldapCalled = false;
   ldap.setLdapTestOverrides({ updateUserGroups: async () => {
     ldapCalled = true;
-    return { status: 'success' };
+    return { status: 'success', message: 'updated' };
   } });
   try {
     const response = await request(`/orgs/alpha/v2/projects/${fixture.alphaProjectId}/members/add`, 'alpha-lead', {
