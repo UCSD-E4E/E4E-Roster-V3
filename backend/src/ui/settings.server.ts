@@ -6,6 +6,7 @@ import { planIntegrationSync, runIntegrationSync, type IntegrationSyncResult } f
 import { connectionFor } from '../integrations/config';
 import { integrationAdapters, integrationFailure } from '../integrations/providers';
 import { linkSlackIdentity } from '../integrations/slack-actions';
+import { rosterBaseUrl, scanSlackOnboarding } from '../integrations/onboarding';
 import { requireOrgAdmin } from './access';
 import type { RosterUiContext } from './projects.server';
 
@@ -18,7 +19,7 @@ export interface IntegrationSummary {
 
 export interface IntegrationSettings {
   github: { enabled: boolean; appId: string; installationId: string; org: string; hasPrivateKey: boolean; hasWebhookSecret: boolean };
-  slack: { enabled: boolean; teamId: string; hasBotToken: boolean; hasAppToken: boolean };
+  slack: { enabled: boolean; teamId: string; hasBotToken: boolean; hasAppToken: boolean; onboardingEnabled: boolean; onboardingChannelId: string };
 }
 
 export interface OrgGroupMappingSettings {
@@ -64,7 +65,7 @@ export async function getIntegrationSettings(context: RosterUiContext): Promise<
   const slack = byService.get('slack');
   return {
     github: { enabled: github?.enabled ?? false, appId: github?.config.appId ?? '', installationId: github?.config.installationId ?? '', org: github?.config.org ?? '', hasPrivateKey: Boolean(github?.config.privateKey), hasWebhookSecret: Boolean(github?.config.webhookSecret) },
-    slack: { enabled: slack?.enabled ?? false, teamId: slack?.config.teamId ?? '', hasBotToken: Boolean(slack?.config.botToken), hasAppToken: Boolean(slack?.config.appToken) },
+    slack: { enabled: slack?.enabled ?? false, teamId: slack?.config.teamId ?? '', hasBotToken: Boolean(slack?.config.botToken), hasAppToken: Boolean(slack?.config.appToken), onboardingEnabled: slack?.config.onboardingEnabled === 'true', onboardingChannelId: slack?.config.onboardingChannelId ?? '' },
   };
 }
 
@@ -83,10 +84,19 @@ export async function updateGithubSettings(context: RosterUiContext, fields: { e
     ON CONFLICT (org_id, service) DO UPDATE SET config = $2, enabled = $3, updated_at = NOW()`, [context.org.id, JSON.stringify(config), fields.enabled]);
 }
 
-export async function updateSlackSettings(context: RosterUiContext, fields: { enabled: boolean; teamId: string; botToken: string; appToken?: string }): Promise<void> {
+export async function updateSlackSettings(context: RosterUiContext, fields: { enabled: boolean; teamId: string; botToken: string; appToken?: string; onboardingEnabled?: boolean; onboardingChannelId?: string }): Promise<void> {
   requireOrgAdmin(context);
   const existing = await getIntegrationSettings(context);
   const config: Record<string, string> = { teamId: fields.teamId };
+  const onboardingEnabled = fields.onboardingEnabled ?? existing.slack.onboardingEnabled;
+  const onboardingChannelId = fields.onboardingChannelId ?? existing.slack.onboardingChannelId;
+  if (onboardingChannelId && !/^[CG][A-Z0-9]+$/.test(onboardingChannelId)) throw data('Enter the roster bot channel ID, not its name.', { status: 400 });
+  if (onboardingEnabled) {
+    if (!onboardingChannelId) throw data('Choose a roster bot channel before enabling onboarding.', { status: 400 });
+    try { rosterBaseUrl(); } catch { throw data('Configure ROSTER_BASE_URL before enabling onboarding.', { status: 400 }); }
+    config.onboardingEnabled = 'true';
+  }
+  if (onboardingChannelId) config.onboardingChannelId = onboardingChannelId;
   if (fields.botToken) config.botToken = encrypt(fields.botToken);
   else if (existing.slack.hasBotToken) {
     const { rows } = await db.query<{ config: Record<string, string> }>('SELECT config FROM org_integrations WHERE org_id = $1 AND service = $2', [context.org.id, 'slack']);
@@ -170,20 +180,26 @@ async function rejectDuplicateConnection(orgId: number, service: string, key: st
 }
 export async function getIntegrationWorkbench(context: RosterUiContext) {
   requireOrgAdmin(context);
-  const [plan, { rows: identities }, { rows: events }] = await Promise.all([
+  const [plan, { rows: identities }, { rows: events }, { rows: deliveries }] = await Promise.all([
     planIntegrationSync(context.org.id),
     db.query<{ username: string; external_id: string | null }>(`SELECT o.username, x.external_id FROM user_orgs o
       LEFT JOIN integration_identities x ON x.org_id=o.org_id AND x.username=o.username AND x.service='slack'
       WHERE o.org_id=$1 ORDER BY o.username`, [context.org.id]),
     db.query<{ action: string; target_username: string | null; details: Record<string, string>; created_at: string }>(`SELECT action, target_username, details, created_at::text FROM audit_log
       WHERE org_id=$1 AND (action LIKE 'integration_%' OR action IN ('self_extend_account','link_slack_identity','github_webhook_received')) ORDER BY id DESC LIMIT 20`, [context.org.id]),
+    db.query<{ kind: string; identity: string; status: string }>(`SELECT 'Invitation' AS kind,slack_user_id AS identity,delivery_status AS status FROM slack_onboarding WHERE org_id=$1
+      UNION ALL SELECT 'Join notification',username,status FROM org_join_notifications WHERE org_id=$1`, [context.org.id]),
   ]);
-  return { plan, identities, events };
+  return { plan, identities, events, deliveries };
 }
 export type IntegrationWorkbench = Awaited<ReturnType<typeof getIntegrationWorkbench>>;
 export async function integrationTool(context: RosterUiContext, fields: { intent: string; service: string; username: string; externalId: string }) {
   requireOrgAdmin(context);
   try {
+    if (fields.intent === 'scan-slack') {
+      const result = await scanSlackOnboarding(context.org.id);
+      return { integrationMessage: `Slack scan: ${result.invited} invitations, ${result.skipped} skipped, ${result.failed} failed. No reminders are sent.` };
+    }
     if (fields.intent === 'link-slack') {
       await linkSlackIdentity(context.org.id, fields.username, fields.externalId.trim(), context.user.username);
       return { integrationMessage: 'Slack identity linked for this organization.' };

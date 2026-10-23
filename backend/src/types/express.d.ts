@@ -17,6 +17,7 @@ declare global {
 
 declare module 'express-session' {
   interface SessionData {
+    slackOnboardingHash?: string;
     wizard?: WizardState;
     systemProvisionResult?: SystemProvisionResult;
     rosterProvisionResult?: RosterProvisionResult;

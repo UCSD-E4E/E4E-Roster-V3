@@ -161,11 +161,11 @@ function routesFor(context: RosterUiContext, req: ExpressRequest): RouteObject[]
         action: ({ request }) => keepFormError(async () => {
           const form = await request.formData();
           const intent = String(form.get('intent') ?? '');
-          if (['verify', 'sync', 'link-slack'].includes(intent)) return integrationTool(context, { intent, service: String(form.get('service') ?? ''), username: String(form.get('username') ?? ''), externalId: String(form.get('externalId') ?? '') });
+          if (['verify', 'sync', 'link-slack', 'scan-slack'].includes(intent)) return integrationTool(context, { intent, service: String(form.get('service') ?? ''), username: String(form.get('username') ?? ''), externalId: String(form.get('externalId') ?? '') });
           if (intent === 'github') {
             await updateGithubSettings(context, { enabled: form.get('enabled') === 'true', appId: String(form.get('appId') ?? '').trim(), installationId: String(form.get('installationId') ?? '').trim(), org: String(form.get('org') ?? '').trim(), privateKey: String(form.get('privateKey') ?? '').trim(), webhookSecret: String(form.get('webhookSecret') ?? '').trim() });
           } else if (intent === 'slack') {
-            await updateSlackSettings(context, { enabled: form.get('enabled') === 'true', teamId: String(form.get('teamId') ?? '').trim(), botToken: String(form.get('botToken') ?? '').trim(), appToken: String(form.get('appToken') ?? '').trim() });
+            await updateSlackSettings(context, { enabled: form.get('enabled') === 'true', teamId: String(form.get('teamId') ?? '').trim(), botToken: String(form.get('botToken') ?? '').trim(), appToken: String(form.get('appToken') ?? '').trim(), onboardingEnabled: form.get('onboardingEnabled') === 'true', onboardingChannelId: String(form.get('onboardingChannelId') ?? '').trim() });
           } else throw data('Unknown settings action.', { status: 400 });
           return redirect('/settings');
         }),

@@ -3,11 +3,15 @@ import { WebClient } from '@slack/web-api';
 import { Connection, secret } from './config';
 
 export interface Destination { id: string; name: string }
+export interface SlackWorkspaceMember { id: string; email: string }
 export interface SlackAdapter {
   verify(): Promise<void>;
   destinations(): Promise<Destination[]>;
   memberEmail(userId: string): Promise<string | null>;
   grant(channelId: string, userId: string): Promise<string>;
+  members(): Promise<SlackWorkspaceMember[]>;
+  directMessage(userId: string, text: string): Promise<void>;
+  sendMessage(channelId: string, text: string): Promise<void>;
 }
 export interface GithubAdapter {
   verify(): Promise<void>;
@@ -22,6 +26,27 @@ class SlackProvider implements SlackAdapter {
   async verify() {
     const result = await this.client.auth.test();
     if (result.team_id !== this.connection.config.teamId) throw new Error('Slack token belongs to a different workspace.');
+  }
+  async members() {
+    await this.verify();
+    const members: SlackWorkspaceMember[] = [];
+    for await (const page of this.client.paginate('users.list', { limit: 200 })) {
+      for (const user of (page as { members?: Array<{ id?: string; team_id?: string; deleted?: boolean; is_bot?: boolean; is_app_user?: boolean; is_restricted?: boolean; is_ultra_restricted?: boolean; profile?: { email?: string } }> }).members ?? []) {
+        if (!user.id || user.id === 'USLACKBOT' || user.deleted || user.is_bot || user.is_app_user || user.is_restricted || user.is_ultra_restricted || user.team_id !== this.connection.config.teamId || !user.profile?.email) continue;
+        members.push({ id: user.id, email: user.profile.email.trim().toLowerCase() });
+      }
+    }
+    return members;
+  }
+  async directMessage(userId: string, text: string) {
+    await this.verify();
+    const result = await this.client.conversations.open({ users: userId });
+    if (!result.channel?.id) throw new Error('Could not open a Slack direct message.');
+    await this.sendMessage(result.channel.id, text);
+  }
+  async sendMessage(channelId: string, text: string) {
+    await this.verify();
+    await this.client.chat.postMessage({ channel: channelId, text, unfurl_links: false, unfurl_media: false });
   }
   async destinations() {
     await this.verify();

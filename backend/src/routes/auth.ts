@@ -30,11 +30,14 @@ router.get(
         console.error('[auth/callback] authentication failed');
         return res.redirect('/login?error=1');
       }
+      const slackOnboardingHash = req.session.slackOnboardingHash;
       req.session.regenerate((regenErr) => {
         if (regenErr) return next(regenErr);
         req.login(user, (loginErr) => {
           if (loginErr) return next(loginErr);
-          res.redirect('/');
+          // Passport also regenerates the session during login; restore only this fixed-purpose continuation afterwards.
+          req.session.slackOnboardingHash = slackOnboardingHash;
+          res.redirect(slackOnboardingHash ? '/connect/slack' : '/');
         });
       });
     })(req, res, next);

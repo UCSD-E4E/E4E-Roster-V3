@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 
 export const db = new Pool({
   host: process.env.DB_HOST ?? 'db',
@@ -33,6 +33,7 @@ export async function runMigrations(): Promise<void> {
     `);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS github_username  VARCHAR(100)`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS slack_username   VARCHAR(100)`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS github_username_pending VARCHAR(100)`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS secondary_email  VARCHAR(255)`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone            VARCHAR(50)`);
 
@@ -201,6 +202,33 @@ export async function runMigrations(): Promise<void> {
     await client.query(`ALTER TABLE group_mappings DROP CONSTRAINT IF EXISTS group_mappings_ldap_group_service_target_id_key`);
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS group_mappings_org_target
       ON group_mappings (org_id, ldap_group, service, target_id) WHERE org_id IS NOT NULL`);
+    await client.query(`CREATE TABLE IF NOT EXISTS slack_onboarding (
+      org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      team_id TEXT NOT NULL,
+      slack_user_id TEXT NOT NULL,
+      slack_email TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      invited_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      claimed_by VARCHAR(100) REFERENCES users(username) ON DELETE SET NULL,
+      claimed_at TIMESTAMPTZ,
+      delivery_status TEXT NOT NULL DEFAULT 'attempted',
+      PRIMARY KEY (org_id, team_id, slack_user_id)
+    )`);
+    await client.query(`CREATE TABLE IF NOT EXISTS slack_discovery (
+      org_id INTEGER PRIMARY KEY REFERENCES orgs(id) ON DELETE CASCADE,
+      next_scan_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_scan_at TIMESTAMPTZ,
+      last_error TEXT
+    )`);
+    await client.query(`CREATE TABLE IF NOT EXISTS org_join_notifications (
+      org_id INTEGER NOT NULL,
+      username VARCHAR(100) NOT NULL,
+      attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      status TEXT NOT NULL DEFAULT 'attempted',
+      FOREIGN KEY (username, org_id) REFERENCES user_orgs(username, org_id) ON DELETE CASCADE,
+      PRIMARY KEY (org_id, username)
+    )`);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -288,10 +316,12 @@ export async function upsertUserOrgMembership(
 export async function ensureUserOrgMembership(
   username: string,
   orgId: number,
-): Promise<void> {
-  await db.query(`
+  executor: Pick<PoolClient, 'query'> = db,
+): Promise<boolean> {
+  const result = await executor.query(`
     INSERT INTO user_orgs (username, org_id, role)
     VALUES ($1, $2, 'member')
-    ON CONFLICT (username, org_id) DO NOTHING
+    ON CONFLICT (username, org_id) DO NOTHING RETURNING username
   `, [username, orgId]);
+  return Boolean(result.rowCount);
 }

@@ -4,6 +4,7 @@ import { Connection, secret, resolveConnection } from './config';
 import { handleSlackCommand } from './slack-actions';
 import { runIntegrationSync } from '../services/integrations';
 import { integrationAdapters } from './providers';
+import { runDueSlackOnboarding, userRequestedOnboarding } from './onboarding';
 
 // One outbound socket per configured app/workspace. It lives in the existing backend process.
 // Checking configuration periodically makes enable/disable and credential rotation effective without restart.
@@ -34,9 +35,13 @@ export function startIntegrationRuntime(): () => Promise<void> {
               return { botToken: secret(current, 'botToken') };
             } });
           startingApp = app;
-          for (const command of ['/roster-check', '/roster-extend']) app.command(command, async ({ command: payload, ack, respond }) => {
+          for (const command of ['/roster-check', '/roster-extend', '/roster-connect']) app.command(command, async ({ command: payload, ack, respond }) => {
             await ack();
-            try { await respond({ response_type: 'ephemeral', text: await handleSlackCommand(payload.team_id, payload.user_id, command) }); }
+            try {
+              const current = await resolveConnection('slack', 'teamId', payload.team_id);
+              const text = command === '/roster-connect' ? await userRequestedOnboarding(current.orgId, payload.user_id) : await handleSlackCommand(payload.team_id, payload.user_id, command);
+              await respond({ response_type: 'ephemeral', text });
+            }
             catch (error) { await respond({ response_type: 'ephemeral', text: error instanceof Error ? error.message : 'Roster operation failed.' }); }
           });
           app.error(async () => { console.error(`[integrations] Slack handler failed for organization ${row.org_id}`); });
@@ -64,5 +69,14 @@ export function startIntegrationRuntime(): () => Promise<void> {
   void refresh();
   const refreshTimer = setInterval(() => void refresh(), 15000);
   const syncTimer = setInterval(() => void sync().catch(() => console.warn('[integrations] Scheduled sync failed.')), 30 * 60 * 1000);
-  return async () => { stopping = true; clearInterval(refreshTimer); clearInterval(syncTimer); await Promise.all([...sockets.values()].map(socket => socket.app.stop())); };
+  let discovering = false;
+  async function discover() {
+    if (discovering || stopping) return;
+    discovering = true;
+    try { await runDueSlackOnboarding(); } catch { console.warn('[integrations] Slack onboarding scan failed.'); }
+    finally { discovering = false; }
+  }
+  void discover();
+  const discoveryTimer = setInterval(() => void discover(), 60 * 60 * 1000);
+  return async () => { stopping = true; clearInterval(refreshTimer); clearInterval(syncTimer); clearInterval(discoveryTimer); await Promise.all([...sockets.values()].map(socket => socket.app.stop())); };
 }

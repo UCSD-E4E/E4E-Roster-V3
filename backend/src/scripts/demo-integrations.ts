@@ -7,6 +7,7 @@ async function main() {
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid demo port.');
   const origin = `http://127.0.0.1:${port}`;
   process.env.NODE_ENV = 'test';
+  process.env.ROSTER_BASE_URL = origin;
   process.env.DB_HOST = '127.0.0.1';
   process.env.DB_PORT = '55434';
   process.env.DB_NAME = liveProviders ? 'roster_integrations_sandbox' : 'roster_integrations_demo';
@@ -36,7 +37,7 @@ async function main() {
     }
     await db.query("INSERT INTO org_groups (org_id,ldap_group) VALUES ($1,'shared-demo') ON CONFLICT DO NOTHING", [org.id]);
     for (const [service, config, target] of [
-      ['slack', { teamId: `T${prefix}DEMO`, botToken: encrypt('fake-token') }, `C${prefix}DEMO`],
+      ['slack', { teamId: `T${prefix}DEMO`, botToken: encrypt('fake-token'), onboardingEnabled: 'true', onboardingChannelId: `C${prefix}BOT` }, `C${prefix}DEMO`],
       ['github', { org: `${prefix}-demo`, appId: '123', installationId: e4e ? '1001' : '1002' }, `${prefix.toLowerCase()}-demo-team`],
     ] as const) {
       if (liveProviders) {
@@ -52,17 +53,23 @@ async function main() {
   }
   const effects: Array<{ provider: string; orgId?: number; target: string; identity: string }> = [];
   if (!liveProviders) setIntegrationAdapters({
-    slack: c => ({ verify: async () => {}, destinations: async () => [{ id: `C${c.config.teamId.slice(1,4)}DEMO`, name: 'demo-channel' }],
+    slack: c => ({ verify: async () => {},
+      members: async () => [{ id: c.config.teamId === 'TE4EDEMO' ? 'UE4ENEW' : 'UKRGNEW', email: 'new@example.test' }, { id: c.config.teamId === 'TE4EDEMO' ? 'UE4EALICE' : 'UKRGALICE', email: 'alice@example.test' }],
+      directMessage: async (identity, text) => { effects.push({ provider: 'Slack onboarding DM (simulated)', orgId: c.orgId, identity, target: text }); },
+      sendMessage: async (channel, text) => { effects.push({ provider: 'Roster channel notification (simulated)', orgId: c.orgId, identity: channel, target: text }); },
+      destinations: async () => [{ id: `C${c.config.teamId.slice(1,4)}DEMO`, name: 'demo-channel' }],
       memberEmail: async id => {
         const prefix = c.config.teamId === 'TE4EDEMO' ? 'UE4E' : 'UKRG';
         if (!id.startsWith(prefix)) throw new Error('Slack member belongs to a different workspace.');
-        return id.includes('ALICE') ? 'alice@example.test' : id.includes('EVE') ? 'eve@example.test' : null;
+        return id.includes('ALICE') ? 'alice@example.test' : id.includes('EVE') ? 'eve@example.test' : id.endsWith('NEW') ? 'new@example.test' : null;
       },
       grant: async (target, identity) => { effects.push({ provider: 'Slack (simulated)', orgId: c.orgId, target, identity }); return 'simulated_invitation'; } }),
     github: c => ({ verify: async () => {}, destinations: async () => [{ id: `${c.config.org.toLowerCase()}-team`, name: 'Demo team' }],
       grant: async (target, identity) => { effects.push({ provider: 'GitHub (simulated)', orgId: c.orgId, target, identity }); return 'simulated_active'; } }),
   });
-  setLdapTestOverrides({ listUsers: async () => [], listGroups: async () => ['shared-demo'],
+  setLdapTestOverrides({
+    getUser: async username => username === 'new-member-demo' ? { username, firstName: 'New', lastName: 'Member', email: 'new@example.test', dn: 'CN=New Demo', disabled: false, groups: [], expiryDate: null, sshPublicKeys: [] } : null,
+    listUsers: async () => [], listGroups: async () => ['shared-demo'],
     updateUserExpiry: async (username, expiry) => { effects.push({ provider: 'LDAP (simulated)', identity: username, target: expiry ?? 'never' }); return { status: 'success', message: 'Simulated LDAP update' }; },
     createGroup: async () => ({ status: 'success', message: 'Simulated group creation' }),
     createUser: async () => ({ status: 'failed', message: 'User provisioning is outside this integration demo.' }),
@@ -71,6 +78,7 @@ async function main() {
     setSshKeys: async () => ({ status: 'success', message: 'Simulated' }),
   });
   const stopIntegrations = liveProviders ? (await import('../integrations/runtime')).startIntegrationRuntime() : async () => {};
+  (await import('../auth')).setupPassportSession();
   const admin = { id: 'integration-demo', username: 'demo-admin', name: 'Local Demo Admin', email: 'demo@example.test', groups: [], isSystemAdmin: true, isLocalAdmin: true, orgs: [] };
   const app = express.default();
   app.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
@@ -81,6 +89,7 @@ async function main() {
       <h1>Roster integration prototype</h1><p>${liveProviders ? 'LIVE Slack/GitHub sandbox · provider operations affect the connected test organizations · LDAP remains simulated' : 'Local simulation · existing roster backend · no real Slack, GitHub, or LDAP calls'}</p>
       <section><h2>1. Explore organization settings</h2>${orgs.map(o => `<p><a href="/orgs/${escape(o.slug)}/v2/settings">${escape(o.name)}: credentials, identities, grant preview, apply, activity</a> · <a href="/orgs/${escape(o.slug)}/v2/settings/groups?group=shared-demo">Group destinations</a></p>`).join('')}
       <p>Alice belongs to both organizations with different Slack IDs. Eve and Kai belong to one each despite sharing the same LDAP group. Disabled and expired accounts are excluded.</p></section>
+      <section><h2>New member onboarding</h2><p>Open an organization’s Settings and click “Check Slack for missing members now”. A simulated invitation appears below. Opening it simulates SSO as new-member-demo; submitting creates regular membership and one notification linking to Edit User.</p>${effects.filter(e => e.provider.includes('onboarding DM')).map(e => { const link = e.target.match(/https?:\/\/[^\s]+\/connect\/slack\/[a-f0-9]+/)?.[0]; return link ? `<p><a href="${escape(link)}">Open invitation for ${escape(e.identity)}</a></p>` : ''; }).join('')}</section>
       <section><h2>2. Simulate a Slack command</h2><p>${liveProviders ? 'Use /roster-check and /roster-extend in the connected test Slack workspace. This form uses the simulated workspace IDs and is only useful in simulation mode.' : 'These call the same command handler used by real Slack Socket Mode.'}</p><form method="post" action="/demo/command"><label>Workspace <select name="teamId"><option>TE4EDEMO</option><option>TKRGDEMO</option></select></label> <label>User <select name="userId"><option>UE4EALICE</option><option>UKRGALICE</option><option>UE4EEVE</option><option>UUNKNOWN</option></select></label> <select name="command"><option>/roster-check</option><option>/roster-extend</option></select><button>Run command</button></form><p>Try Alice’s E4E identity in KRG: it must be rejected. Extend Alice in E4E, then check in KRG: the shared date changes in both.</p></section>
       <section><h2>3. Simulated external effects</h2><p>Reload this page after applying grants or extending an account.</p><table><tr><th>Provider</th><th>Organization ID</th><th>Identity</th><th>Destination / expiration</th></tr>${effects.slice(-40).reverse().map(e => `<tr><td>${escape(e.provider)}</td><td>${e.orgId ?? 'shared'}</td><td>${escape(e.identity)}</td><td>${escape(e.target)}</td></tr>`).join('')}</table></section></body></html>`);
   });
@@ -92,7 +101,9 @@ async function main() {
     res.type('html').send(`<h1>Slack response (simulated, ephemeral)</h1><pre>${escape(message)}</pre><a href="/demo">Back to demo</a>`);
   });
   app.get('/', (_req, res) => res.redirect('/demo'));
-  app.use(createApp({ testUserFromRequest: () => admin }));
+  app.use(createApp({ testUserFromRequest: req => !liveProviders && req.path.startsWith('/connect/slack')
+    ? { ...admin, id: 'new-member-demo', username: 'new-member-demo', name: 'New Member', email: 'new@example.test', isLocalAdmin: false, isSystemAdmin: false }
+    : admin }));
   const server = app.listen(port, '127.0.0.1', () => console.log(`Integration demo: ${origin}/demo (${liveProviders ? 'LIVE Slack/GitHub; simulated LDAP' : 'simulated providers'}, isolated database)`));
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => void stopIntegrations().finally(() => server.close(() => void db.end().then(() => process.exit(0)))));
 }

@@ -39,6 +39,7 @@ export interface OrgPersonEdit {
   disabled: boolean;
   ldapGroups: string[];
   githubUsername: string | null;
+  pendingGithubUsername: string | null;
   slackUsername: string | null;
   sshPublicKeys: string[];
 }
@@ -129,11 +130,12 @@ export async function getOrgPersonEdit(
       disabled: boolean;
       ldap_groups: string[];
       github_username: string | null;
+      github_username_pending: string | null;
       slack_username: string | null;
     }>(`
       SELECT u.username, u.first_name, u.last_name, u.email, u.secondary_email, u.phone, u.role,
              TO_CHAR(u.expiry_date, 'YYYY-MM-DD') AS expiry_date, u.disabled, u.ldap_groups,
-             u.github_username, u.slack_username
+             u.github_username, u.github_username_pending, u.slack_username
       FROM users u
       JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $2
       WHERE u.username = $1
@@ -156,6 +158,7 @@ export async function getOrgPersonEdit(
       disabled: row.disabled,
       ldapGroups: row.ldap_groups ?? [],
       githubUsername: row.github_username,
+      pendingGithubUsername: row.github_username_pending,
       slackUsername: row.slack_username,
       sshPublicKeys: ldapUser?.sshPublicKeys ?? [],
     },

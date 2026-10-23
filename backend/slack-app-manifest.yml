@@ -6,6 +6,9 @@ features:
     display_name: Roster Sandbox
     always_online: false
   slash_commands:
+    - command: /roster-connect
+      description: Connect your Slack account to the roster
+      should_escape: false
     - command: /roster-check
       description: Check your roster account in this workspace
       should_escape: false
@@ -16,6 +19,8 @@ oauth_config:
   scopes:
     bot:
       - commands
+      - chat:write
+      - im:write
       - users:read
       - users:read.email
       - channels:read

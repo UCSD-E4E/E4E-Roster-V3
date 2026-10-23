@@ -82,7 +82,7 @@ export async function updateOrganizationPerson(
   const phone = fields.phone.trim() || null;
   await db.query(
     `UPDATE users SET first_name=$1, last_name=$2, email=$3, role=$4, expiry_date=$5, ldap_groups=$6,
-      github_username=$7, slack_username=$8, secondary_email=$9, phone=$10, updated_at=NOW() WHERE username=$11`,
+      github_username=$7::text, github_username_pending=CASE WHEN LOWER(github_username_pending)=LOWER($7::text) THEN NULL ELSE github_username_pending END, slack_username=$8, secondary_email=$9, phone=$10, updated_at=NOW() WHERE username=$11`,
     [firstName, lastName, email, fields.role || null, fields.expiryDate || null, mergedGroups,
       githubUsername, slackUsername, secondaryEmail, phone, username],
   );
