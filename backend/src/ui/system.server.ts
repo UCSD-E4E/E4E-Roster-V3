@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { data } from 'react-router';
 import { db } from '../services/db';
 import * as ldap from '../services/ldap';
-import { triggerGithubInvite } from '../services/integrations';
+import { triggerUserIntegrationSync } from '../services/integrations';
 import { syncUsers } from '../services/sync';
 import type { NewUser } from '../services/types';
 import type { AuthUser } from '../types/user';
@@ -97,27 +97,20 @@ export interface SystemGroupProvisioningOptions {
   slackChannels: Array<{ id: string; name: string }>;
 }
 
-async function integrationChoices<T>(url: string): Promise<T[]> {
-  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 2000);
-  try { const response = await fetch(url, { signal: controller.signal }); const body: unknown = await response.json(); return Array.isArray(body) ? body as T[] : []; }
-  catch { return []; } finally { clearTimeout(timer); }
-}
-
 export async function getSystemGroupProvisioningOptions(): Promise<SystemGroupProvisioningOptions> {
-  const [{ rows: organizations }, { rows: projects }, githubTeams, slackChannels] = await Promise.all([
+  const [{ rows: organizations }, { rows: projects }] = await Promise.all([
     db.query<{ id: number; name: string }>('SELECT id, name FROM orgs ORDER BY name'),
     db.query<{ id: number; name: string; org_id: number }>('SELECT id, name, org_id FROM projects ORDER BY name'),
-    integrationChoices<{ slug: string; name: string }>(`${process.env.GITHUB_APP_URL ?? 'http://github-app:3001'}/teams`),
-    integrationChoices<{ id: string; name: string }>(`${process.env.SLACK_BOT_URL ?? 'http://slackbot:3002'}/channels`),
   ]);
-  return { organizations, projects: projects.map((project) => ({ id: project.id, name: project.name, orgId: project.org_id })), githubTeams, slackChannels };
+  return { organizations, projects: projects.map((project) => ({ id: project.id, name: project.name, orgId: project.org_id })), githubTeams: [], slackChannels: [] };
 }
 
 export async function provisionSystemGroup(actor: string, fields: Record<string, string | string[]>): Promise<{ name: string; status: string; message: string }> {
+  if (fields.githubTeam || fields.slackChannel) throw data('Configure integration destinations in the selected organization’s group settings.', { status: 400 });
   const name = String(fields.groupName ?? '').trim(); if (!name) throw data('Group name is required.', { status: 400 });
   const result = await ldap.createGroup(name); if (result.status === 'failed') throw data(result.message, { status: 400 });
   const organizationIds = [...new Set([fields.orgIds ?? []].flat().map(Number).filter(Number.isInteger))];
-  const projectId = Number(fields.projectId); const [githubTeamSlug = '', ...githubTeamNameParts] = String(fields.githubTeam ?? '').split('|'); const [slackChannelId = '', ...slackChannelNameParts] = String(fields.slackChannel ?? '').split('|'); const githubTeamName = githubTeamNameParts.join('|'); const slackChannelName = slackChannelNameParts.join('|');
+  const projectId = Number(fields.projectId);
   if (Number.isInteger(projectId)) {
     const { rows } = await db.query<{ org_id: number }>('SELECT org_id FROM projects WHERE id = $1', [projectId]);
     if (!rows[0]) throw data('Project not found.', { status: 404 });
@@ -125,8 +118,6 @@ export async function provisionSystemGroup(actor: string, fields: Record<string,
   }
   for (const orgId of organizationIds) await db.query('INSERT INTO org_groups (org_id, ldap_group) SELECT id, $2 FROM orgs WHERE id = $1 ON CONFLICT DO NOTHING', [orgId, name]);
   if (Number.isInteger(projectId)) await db.query('INSERT INTO project_ldap_groups (project_id, ldap_group) VALUES ($1, $2) ON CONFLICT DO NOTHING', [projectId, name]);
-  if (githubTeamSlug && githubTeamName) await db.query(`INSERT INTO group_mappings (ldap_group, service, target_id, target_name) VALUES ($1, 'github', $2, $3) ON CONFLICT DO NOTHING`, [name, githubTeamSlug, githubTeamName]);
-  if (slackChannelId && slackChannelName) await db.query(`INSERT INTO group_mappings (ldap_group, service, target_id, target_name) VALUES ($1, 'slack', $2, $3) ON CONFLICT DO NOTHING`, [name, slackChannelId, slackChannelName]);
   await db.query(`INSERT INTO audit_log (actor, action, details) VALUES ($1, 'create_ldap_group', $2)`, [actor, JSON.stringify({ groupName: name, alreadyExisted: result.status === 'already_exists' })]);
   return { name, status: result.status, message: result.message };
 }
@@ -195,7 +186,7 @@ export async function provisionSystemUser(actor: string, fields: Record<string, 
                     ON CONFLICT (username) DO UPDATE SET role = EXCLUDED.role, updated_at = NOW()`,
       [user.username, user.firstName, user.lastName, user.email, secondaryEmail, phone, user.role, user.expiryDate, user.ldapGroups]);
     await db.query('UPDATE users SET github_username = $1, slack_username = $2, updated_at = NOW() WHERE username = $3', [githubUsername, slackUsername, user.username]);
-    if (githubUsername) triggerGithubInvite(githubUsername, undefined);
+    if (githubUsername) triggerUserIntegrationSync(user.username, undefined, actor);
   }
   await db.query(`INSERT INTO audit_log (actor, action, target_username, details) VALUES ($1, 'create_user', $2, $3)`,
     [actor, user.username, JSON.stringify({ ldapStatus: ldapResult.status, role: user.role, email: user.email })]);
@@ -221,7 +212,7 @@ export async function updateSystemUser(actor: string, username: string, fields: 
   if (ldapError) throw data(ldapError, { status: 400 });
   const githubUsername = String(fields.githubUsername ?? '').trim() || null; const slackUsername = String(fields.slackUsername ?? '').trim() || null;
   await db.query(`UPDATE users SET first_name=$1, last_name=$2, email=$3, role=$4, expiry_date=$5, ldap_groups=$6, github_username=$7, slack_username=$8, secondary_email=$9, phone=$10, updated_at=NOW() WHERE username=$11`, [firstName, lastName, email, String(fields.role ?? '').trim() || null, String(fields.expiryDate ?? '') || null, groups, githubUsername, slackUsername, String(fields.secondaryEmail ?? '').trim().toLowerCase() || null, String(fields.phone ?? '').trim() || null, username]);
-  if (githubUsername) triggerGithubInvite(githubUsername, undefined);
+  if (githubUsername) triggerUserIntegrationSync(username, undefined, actor);
   await db.query(`INSERT INTO audit_log (actor, action, target_username, details) VALUES ($1, 'edit_user', $2, $3)`, [actor, username, JSON.stringify({ firstName, lastName, email, groups })]);
 }
 

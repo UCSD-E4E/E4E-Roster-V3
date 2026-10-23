@@ -5,6 +5,7 @@ import { setupPassport, setupPassportSession } from './auth';
 import { createApp } from './app';
 import { db, runMigrations } from './services/db';
 import { startSyncSchedule } from './services/sync';
+import { startIntegrationRuntime } from './integrations/runtime';
 
 // Creates or updates the break-glass local admin from env vars on every startup.
 // Remove BOOTSTRAP_ADMIN_USERNAME / BOOTSTRAP_ADMIN_PASSWORD from the environment
@@ -70,11 +71,15 @@ async function bootstrap(): Promise<void> {
   await runMigrations();
   await bootstrapLocalAdmin();
   startSyncSchedule();
+  const stopIntegrations = startIntegrationRuntime();
 
   const app = createApp();
-  app.listen(parseInt(PORT, 10), () => {
+  const server = app.listen(parseInt(PORT, 10), () => {
     // TODO: replace localhost with actual configured URL (e.g. from a BASE_URL env var)
     console.log(`E4E Roster running at http://localhost:${PORT}`);
+  });
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => {
+    void stopIntegrations().finally(() => server.close(() => process.exit(0)));
   });
 }
 

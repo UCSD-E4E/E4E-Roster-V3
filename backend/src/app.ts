@@ -16,6 +16,7 @@ import orgsRouter from './routes/orgs';
 import { createReactRosterRouter } from './ui/router';
 import { createReactSystemRouter } from './ui/system-router';
 import { retireLegacyOrgUi, retireLegacySystemUi } from './ui/legacy-redirects';
+import { githubWebhookRouter } from './integrations/webhooks';
 
 export interface CreateAppOptions {
   // Tests can supply a user without standing up an OIDC issuer. This hook is
@@ -38,6 +39,8 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
   // X-Content-Type-Options, X-Frame-Options (SAMEORIGIN), HSTS, Referrer-Policy, etc.
   app.use(helmet({ contentSecurityPolicy: false }));
 
+  // Signature verification needs the original bytes, before express.json consumes them.
+  app.use('/webhooks/github', githubWebhookRouter());
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
   app.use('/static', express.static(staticDir));

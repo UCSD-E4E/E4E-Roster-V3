@@ -1,7 +1,7 @@
 import { data } from 'react-router';
 import { db, ensureUserOrgMembership } from '../services/db';
 import * as ldap from '../services/ldap';
-import { triggerGithubInvite } from '../services/integrations';
+import { triggerUserIntegrationSync } from '../services/integrations';
 import type { NewUser } from '../services/types';
 import { requireOrgAdmin } from './access';
 import { getProject, type RosterUiContext } from './projects.server';
@@ -35,7 +35,7 @@ async function persistProvision(context: RosterUiContext, user: NewUser, seconda
                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
                     ON CONFLICT (username) DO UPDATE SET role=EXCLUDED.role, updated_at=NOW()`, [user.username, user.firstName, user.lastName, user.email, secondaryEmail, phone, user.role, user.expiryDate, user.ldapGroups, githubUsername, slackUsername]);
     await ensureUserOrgMembership(user.username, context.org.id);
-    if (githubUsername) triggerGithubInvite(githubUsername, context.org.id);
+    if (githubUsername) triggerUserIntegrationSync(user.username, context.org.id, context.user.username);
   }
   await db.query(`INSERT INTO audit_log (actor, action, target_username, details, org_id) VALUES ($1, $2, $3, $4, $5)`, [context.user.username, action, user.username, JSON.stringify({ ldapStatus: ldapResult.status, role: user.role, groups: user.ldapGroups, projectId }), context.org.id]);
   return { username: user.username, email: user.email, ldapStatus: ldapResult.status, ldapMessage: ldapResult.message, tempPassword: ldapResult.tempPassword, sshResults };

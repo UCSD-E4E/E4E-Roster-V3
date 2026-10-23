@@ -7,9 +7,13 @@
     "start": "node dist/server.js",
     "lint": "eslint src",
     "test:integration": "NODE_ENV=test DB_HOST=127.0.0.1 DB_PORT=55432 DB_NAME=e4e_roster_test DB_USER=e4e_test DB_PASSWORD=e4e_test SESSION_SECRET=integration-test-only tsx --test test/*.test.ts",
-    "report:membership-reconciliation": "tsx src/scripts/report-membership-reconciliation.ts"
+    "report:membership-reconciliation": "tsx src/scripts/report-membership-reconciliation.ts",
+    "demo:integrations": "node --import tsx src/scripts/demo-integrations.ts",
+    "test:integrations-prototype": "NODE_ENV=test DB_HOST=127.0.0.1 DB_PORT=55434 DB_NAME=roster_integrations_test DB_USER=roster_demo DB_PASSWORD=roster_demo node --import tsx --test test/integrations/prototype.test.ts"
   },
   "dependencies": {
+    "@slack/bolt": "4.1.0",
+    "@slack/web-api": "^7.19.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^16.4.5",
     "express": "^4.22.3",

@@ -185,6 +185,22 @@ export async function runMigrations(): Promise<void> {
       ON CONFLICT DO NOTHING
     `);
 
+    // A Slack identity belongs to an organization/workspace, never to a global user field.
+    // Legacy slack_username values are deliberately not guessed/backfilled.
+    await client.query(`CREATE TABLE IF NOT EXISTS integration_identities (
+      org_id INTEGER NOT NULL,
+      username VARCHAR(100) NOT NULL,
+      service VARCHAR(20) NOT NULL CHECK (service IN ('slack')),
+      external_id VARCHAR(255) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (org_id, username, service),
+      UNIQUE (org_id, service, external_id),
+      FOREIGN KEY (username, org_id) REFERENCES user_orgs(username, org_id) ON DELETE CASCADE
+    )`);
+    // Keep unscoped legacy records for manual review, but scope all new uniqueness checks.
+    await client.query(`ALTER TABLE group_mappings DROP CONSTRAINT IF EXISTS group_mappings_ldap_group_service_target_id_key`);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS group_mappings_org_target
+      ON group_mappings (org_id, ldap_group, service, target_id) WHERE org_id IS NOT NULL`);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

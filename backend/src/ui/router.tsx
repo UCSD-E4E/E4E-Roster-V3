@@ -11,7 +11,7 @@ import {
 import { AccountPage, DashboardPage, GroupMappingsPage, PeopleAddPage, PeopleCreatePage, PeopleEditPage, PeoplePage, PersonProvisionResultPage, ProjectAddPersonPage, ProjectAuditPage, ProjectCreatePage, ProjectCreatePersonPage, ProjectMemberEditPage, ProjectPage, ProjectSettingsPage, ProjectsPage, RosterShell, RouteErrorPage, SettingsPage } from './components';
 import { addProjectGroup, createProject, getProject, getProjectMemberAudit, getProjectMemberEdit, getProjectSettings, listProjects, removeProjectGroup, RosterUiContext, updateProject } from './projects.server';
 import { getOrgPersonEdit, listOrgGroups, listPeople, searchDirectoryPeople, searchPeople, syncOrganizationDirectory } from './people.server';
-import { addOrgGroupIntegrationMapping, createOrganizationGroup, getIntegrationSettings, getOrgGroupMappingSettings, removeOrgGroupIntegrationMapping, setOrgGroupRole, syncOrganizationIntegrations, updateGithubSettings, updateSlackSettings } from './settings.server';
+import { addOrgGroupIntegrationMapping, createOrganizationGroup, getIntegrationWorkbench, integrationTool, getIntegrationSettings, getOrgGroupMappingSettings, removeOrgGroupIntegrationMapping, setOrgGroupRole, syncOrganizationIntegrations, updateGithubSettings, updateSlackSettings } from './settings.server';
 import { getAccountProfile, updateAccountProfile } from './account.server';
 import { getDashboardSummary } from './dashboard.server';
 import { addOrganizationPerson, updateOrganizationPerson } from './people-write.server';
@@ -157,14 +157,15 @@ function routesFor(context: RosterUiContext, req: ExpressRequest): RouteObject[]
         path: 'settings',
         element: <SettingsPage />,
         errorElement: <RouteErrorPage />,
-        loader: async () => ({ settings: await getIntegrationSettings(context), context }),
+        loader: async () => ({ settings: await getIntegrationSettings(context), workbench: await getIntegrationWorkbench(context), context }),
         action: ({ request }) => keepFormError(async () => {
           const form = await request.formData();
           const intent = String(form.get('intent') ?? '');
+          if (['verify', 'sync', 'link-slack'].includes(intent)) return integrationTool(context, { intent, service: String(form.get('service') ?? ''), username: String(form.get('username') ?? ''), externalId: String(form.get('externalId') ?? '') });
           if (intent === 'github') {
-            await updateGithubSettings(context, { enabled: form.get('enabled') === 'true', appId: String(form.get('appId') ?? '').trim(), installationId: String(form.get('installationId') ?? '').trim(), org: String(form.get('org') ?? '').trim(), privateKey: String(form.get('privateKey') ?? '').trim() });
+            await updateGithubSettings(context, { enabled: form.get('enabled') === 'true', appId: String(form.get('appId') ?? '').trim(), installationId: String(form.get('installationId') ?? '').trim(), org: String(form.get('org') ?? '').trim(), privateKey: String(form.get('privateKey') ?? '').trim(), webhookSecret: String(form.get('webhookSecret') ?? '').trim() });
           } else if (intent === 'slack') {
-            await updateSlackSettings(context, { enabled: form.get('enabled') === 'true', teamId: String(form.get('teamId') ?? '').trim(), botToken: String(form.get('botToken') ?? '').trim() });
+            await updateSlackSettings(context, { enabled: form.get('enabled') === 'true', teamId: String(form.get('teamId') ?? '').trim(), botToken: String(form.get('botToken') ?? '').trim(), appToken: String(form.get('appToken') ?? '').trim() });
           } else throw data('Unknown settings action.', { status: 400 });
           return redirect('/settings');
         }),

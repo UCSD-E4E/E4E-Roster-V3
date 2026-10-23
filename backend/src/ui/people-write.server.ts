@@ -2,7 +2,7 @@ import { data } from 'react-router';
 import { db } from '../services/db';
 import { upsertUserOrgMembership } from '../services/db';
 import * as ldap from '../services/ldap';
-import { triggerGithubInvite } from '../services/integrations';
+import { triggerUserIntegrationSync } from '../services/integrations';
 import { requireOrgAdmin } from './access';
 import type { RosterUiContext } from './projects.server';
 
@@ -86,7 +86,7 @@ export async function updateOrganizationPerson(
     [firstName, lastName, email, fields.role || null, fields.expiryDate || null, mergedGroups,
       githubUsername, slackUsername, secondaryEmail, phone, username],
   );
-  if (githubUsername) triggerGithubInvite(githubUsername, context.org.id);
+  if (githubUsername) triggerUserIntegrationSync(username, context.org.id, context.user.username);
   await db.query(
     `INSERT INTO audit_log (actor, action, target_username, details, org_id) VALUES ($1, 'edit_user', $2, $3, $4)`,
     [context.user.username, username, JSON.stringify({ firstName, lastName, email, role: fields.role, expiryDate: fields.expiryDate || null, groups: mergedGroups, githubUsername, slackUsername }), context.org.id],
