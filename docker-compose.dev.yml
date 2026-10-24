@@ -14,7 +14,7 @@ services:
 
   # Optional local webhook forwarding. Slack Socket Mode needs no forwarding.
   smee:
-    image: node:20-alpine
+    image: node:24.22.1-alpine
     profiles: [webhook-debug]
     env_file: .env
     command: >

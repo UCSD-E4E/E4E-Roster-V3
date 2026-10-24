@@ -8,6 +8,8 @@ This runbook describes the integrated backend and the changes needed to deploy i
 
 The server runs **one roster backend and PostgreSQL**. Slack Socket Mode, GitHub clients/webhooks, onboarding, and background jobs all run inside that backend. Do not deploy the historical `slackbot` or `github-app` services or expose ports 3001/3002.
 
+The backend image builds and runs on Node.js 24.22.1 LTS (`node:24.22.1-bookworm-slim`). Rebuild the image and recreate the backend to change the running Node version; updating the host's Node package does not update the container.
+
 | Capability | Current status |
 |---|---|
 | Per-organization Slack workspace and GitHub organization | Implemented; no global credential fallback |
