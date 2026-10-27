@@ -292,6 +292,8 @@ Only a unique configured workspace resolves to a roster organization. Do not con
 
 ### Weekly discovery and browser onboarding
 
+Personal `/roster-connect` requests and their browser completion work whenever the organization’s Slack connection is enabled, regardless of **Check Slack weekly**. Turning weekly discovery off does not invalidate issued links; disabling Slack or changing its workspace still makes those links unavailable.
+
 After validation, enable **Check Slack weekly** for that organization. The backend checks due organizations at startup and hourly; successful scans schedule the next scan seven days later. The manual scan button uses the same implementation. A scan error schedules another discovery attempt one day later, but previously attempted individual messages are not automatically resent.
 
 - Scans exclude bots, deactivated users, guests, accounts without email, existing organization members, linked identities, and known disabled roster identities.

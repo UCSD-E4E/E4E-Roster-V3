@@ -80,7 +80,7 @@ export async function runDueSlackOnboarding(): Promise<void> {
 
 export async function userRequestedOnboarding(orgId: number, slackUserId: string): Promise<string> {
   const origin = rosterBaseUrl(); const connection = await connectionFor(orgId, 'slack');
-  if (connection.config.onboardingEnabled !== 'true') throw new Error('Slack onboarding is not enabled for this organization.');
+  // The weekly-discovery opt-in controls unsolicited invitations, not personal requests.
   const email = await integrationAdapters().slack(connection).memberEmail(slackUserId);
   if (!email) throw new Error('Your Slack account needs an email address before connecting.');
   const token = randomBytes(32).toString('hex');
@@ -97,7 +97,7 @@ export async function onboardingDetails(hash: string) {
   const { rows } = await db.query<{ org_id: number; team_id: string; slack_user_id: string; slack_email: string; name: string; slug: string }>(
     `SELECT s.org_id,s.team_id,s.slack_user_id,s.slack_email,o.name,o.slug FROM slack_onboarding s JOIN orgs o ON o.id=s.org_id
      JOIN org_integrations i ON i.org_id=s.org_id AND i.service='slack' AND i.enabled AND i.config->>'teamId'=s.team_id
-     WHERE s.token_hash=$1 AND s.expires_at>NOW() AND s.claimed_at IS NULL AND i.config->>'onboardingEnabled'='true'`, [hash]);
+     WHERE s.token_hash=$1 AND s.expires_at>NOW() AND s.claimed_at IS NULL`, [hash]);
   if (!rows[0]) throw new Error('This connection link is expired, already used, or unavailable. Run /roster-connect in Slack for help.');
   return rows[0];
 }
@@ -118,7 +118,7 @@ export async function completeSlackOnboarding(hash: string, user: AuthUser, gith
   try {
     await client.query('BEGIN');
     const { rowCount: enabled } = await client.query(`SELECT 1 FROM org_integrations WHERE org_id=$1 AND service='slack'
-      AND enabled AND config->>'teamId'=$2 AND config->>'onboardingEnabled'='true' FOR SHARE`, [invitation.org_id,invitation.team_id]);
+      AND enabled AND config->>'teamId'=$2 FOR SHARE`, [invitation.org_id,invitation.team_id]);
     if (!enabled) throw new Error('This connection is no longer available.');
     // Single-use claim and identity uniqueness live in the same transaction as membership creation.
     const { rows: [valid] } = await client.query(`SELECT 1 FROM slack_onboarding WHERE token_hash=$1 AND claimed_at IS NULL AND expires_at>NOW() FOR UPDATE`, [hash]);

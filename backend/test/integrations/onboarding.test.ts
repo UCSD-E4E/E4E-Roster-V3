@@ -90,12 +90,14 @@ test('new member gets regular membership, scoped Slack link, pending GitHub user
 });
 
 test('existing organization member reconnects quietly and keeps their existing role', async () => {
+  await db.query("UPDATE org_integrations SET config=config-'onboardingEnabled' WHERE org_id=$1 AND service='slack'",[alpha]);
   const response = await userRequestedOnboarding(alpha,'UEXISTING');
   const token = response.match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
   const result = await completeSlackOnboarding(onboardingTokenHash(token),user('existing','existing@example.test'),'existing-github');
   assert.equal(result.joined,false); assert.equal(messages.length,1);
   const { rows: [membership] } = await db.query("SELECT role FROM user_orgs WHERE org_id=$1 AND username='existing'",[alpha]);
   assert.equal(membership.role,'org_admin');
+  await db.query("UPDATE org_integrations SET config=jsonb_set(config,'{onboardingEnabled}','\"true\"') WHERE org_id=$1 AND service='slack'",[alpha]);
 });
 
 test('joining a second organization reuses the roster account and notifies only that organization channel', async () => {
@@ -121,7 +123,9 @@ test('wrong account, malformed GitHub username, disabled account and disabled co
   await assert.rejects(() => completeSlackOnboarding(hash,user('other','other@example.test'),'https://github.com/octocat'),/valid GitHub/);
   await assert.rejects(() => completeSlackOnboarding(hash,user('disabled','disabled@example.test'),'octocat'),/active directory/);
   await db.query("UPDATE org_integrations SET enabled=FALSE WHERE org_id=$1 AND service='slack'",[alpha]);
+  await assert.rejects(() => userRequestedOnboarding(alpha,'UOTHER'),/not enabled/);
   await assert.rejects(() => onboardingDetails(hash),/unavailable/);
+  await assert.rejects(() => completeSlackOnboarding(hash,user('other','other@example.test'),'octocat'),/unavailable/);
   await db.query("UPDATE org_integrations SET enabled=TRUE WHERE org_id=$1 AND service='slack'",[alpha]);
 });
 
@@ -136,6 +140,8 @@ test('expired links are replaced only on user request and old tokens stop workin
 });
 
 test('browser invitation survives actual login/session regeneration; GET does not claim and cross-site POST is rejected', async () => {
+  // Weekly invitations are off throughout the actual browser login/claim flow.
+  await db.query("UPDATE org_integrations SET config=jsonb_set(config,'{onboardingEnabled}','\"false\"') WHERE org_id=$1 AND service='slack'",[alpha]);
   const reply = await userRequestedOnboarding(alpha,'UOTHER'); const token = reply.match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
   let cookie = '';
   const request = async (path: string, init: RequestInit = {}) => {
@@ -153,4 +159,40 @@ test('browser invitation survives actual login/session regeneration; GET does no
   const completed = await request('/connect/slack',{ method: 'POST',headers: { Origin: origin,'Content-Type': 'application/x-www-form-urlencoded' },body: 'githubUsername=octocat' });
   assert.equal(completed.status,200); assert.match(await completed.text(),/Your account is connected/);
   assert.equal(messages.length,3);
+});
+
+test('personal onboarding adds a regular member while weekly discovery stays off', async () => {
+  const { rows: [org] } = await db.query<{ id: number }>("INSERT INTO orgs (slug,name) VALUES ('self-service','Self Service') RETURNING id");
+  await db.query(`INSERT INTO org_integrations (org_id,service,enabled,config) VALUES ($1,'slack',TRUE,$2)`,
+    [org.id,JSON.stringify({ teamId: 'TSELF', onboardingChannelId: 'CSELF' })]);
+  const dmCount = dms.length; const messageCount = messages.length;
+  await runDueSlackOnboarding();
+  assert.equal(dms.length,dmCount);
+  const { rows: discovery } = await db.query('SELECT org_id FROM slack_discovery WHERE org_id=$1',[org.id]);
+  assert.equal(discovery.length,0);
+
+  const response = await userRequestedOnboarding(org.id,'UOTHER');
+  const token = response.match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
+  assert.equal((await onboardingDetails(onboardingTokenHash(token))).org_id,org.id);
+  const result = await completeSlackOnboarding(onboardingTokenHash(token),user('other','other@example.test'),'octocat');
+  assert.equal(result.joined,true);
+  const { rows: [membership] } = await db.query("SELECT role FROM user_orgs WHERE org_id=$1 AND username='other'",[org.id]);
+  assert.equal(membership.role,'member');
+  assert.equal(dms.length,dmCount);
+  assert.equal(messages.length,messageCount+1);
+  assert.equal(messages.at(-1)?.channel,'CSELF');
+  assert(messages.at(-1)?.text.includes('/orgs/self-service/v2/people/other/edit'));
+});
+
+test('turning weekly discovery off preserves an issued invitation but rebinding the workspace invalidates it', async () => {
+  const hash = onboardingTokenHash(invitation(beta,'UOTHER'));
+  await db.query("UPDATE org_integrations SET config=config-'onboardingEnabled' WHERE org_id=$1 AND service='slack'",[beta]);
+  assert.equal((await onboardingDetails(hash)).org_id,beta);
+  const result = await completeSlackOnboarding(hash,user('browser','other@example.test'),'octocat');
+  assert.equal(result.joined,true);
+
+  const response = await userRequestedOnboarding(beta,'UEXISTING');
+  const token = response.match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
+  await db.query("UPDATE org_integrations SET config=jsonb_set(config,'{teamId}','\"TREBOUND\"') WHERE org_id=$1 AND service='slack'",[beta]);
+  await assert.rejects(() => onboardingDetails(onboardingTokenHash(token)),/unavailable/);
 });

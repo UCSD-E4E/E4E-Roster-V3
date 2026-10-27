@@ -80,7 +80,7 @@ Use a distinct Slack app/workspace connection per roster organization. Socket Mo
 
 ## 7. Test, then enable onboarding
 
-1. Have a test user run `/roster-connect`, sign in through SSO, and enter a GitHub username. They must already have an active directory account; Slack and roster email addresses must match.
+1. With Slack enabled, have a test user run `/roster-connect`, sign in through SSO, and enter a GitHub username. This works with **Check Slack weekly** off. They must already have an active directory account; Slack and roster email addresses must match.
 2. Verify/save the GitHub username using the existing **Edit User** page. Self-submitted usernames remain pending until reviewed.
 3. In organization Settings → Groups, map a test group to Slack channel IDs and GitHub team slugs. Preview, then apply grants. Accept any GitHub organization invitation before checking team access.
 4. Test `/roster-check` and `/roster-extend`. Expiration changes affect the shared directory account across organizations.
