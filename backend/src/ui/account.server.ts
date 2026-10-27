@@ -27,7 +27,8 @@ export async function getAccountProfile(context: RosterUiContext): Promise<Accou
       expiry_date: string | null; disabled: boolean; github_username: string | null; github_username_pending: string | null;
       slack_username: string | null; ldap_groups: string[];
     }>(`SELECT first_name, last_name, email, secondary_email, phone, role,
-               expiry_date, disabled, github_username, github_username_pending, slack_username, ldap_groups
+               TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
+               disabled, github_username, github_username_pending, slack_username, ldap_groups
         FROM users WHERE username = $1`, [context.user.username]),
     context.user.isLocalAdmin ? Promise.resolve(null) : ldap.getUser(context.user.username).catch(() => null),
   ]);

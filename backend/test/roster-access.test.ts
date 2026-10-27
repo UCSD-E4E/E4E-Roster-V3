@@ -949,6 +949,25 @@ test('the React account workspace renders and updates the signed-in local admin 
   assert.deepEqual(rows, [{ secondary_email: 'personal@example.test', phone: '+1 555 0100' }]);
 });
 
+test('regular members can render their account with and without an expiration date', async () => {
+  ldap.setLdapTestOverrides({ getUser: async () => null });
+  try {
+    for (const expiry of ['2027-01-25', null]) {
+      await db.query("UPDATE users SET expiry_date = $1 WHERE username = 'alpha-member'", [expiry]);
+      const response = await request('/orgs/alpha/v2/account', 'alpha-member');
+      assert.equal(response.status, 200);
+      const body = await response.text();
+      assert.match(body, /My account/);
+      assert.match(body, /Alpha Member/);
+      assert.match(body, /SSH public keys/);
+      assert.ok(body.includes(expiry ?? 'No expiry'));
+    }
+  } finally {
+    ldap.setLdapTestOverrides(undefined);
+    await db.query("UPDATE users SET expiry_date = NULL WHERE username = 'alpha-member'");
+  }
+});
+
 test('the React account workspace updates the signed-in directory user and writes their SSH keys', async () => {
   let received: { username: string; keys: string[] } | undefined;
   ldap.setLdapTestOverrides({ setSshKeys: async (username, keys) => {
