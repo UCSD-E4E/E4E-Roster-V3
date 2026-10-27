@@ -301,10 +301,10 @@ After validation, enable **Check Slack weekly** for that organization. The backe
 - They sign in using the existing SSO system, confirm their Slack link, and enter a GitHub username. They need an existing active directory account; this flow does not create AD accounts.
 - Slack and roster email addresses must match. An administrator must handle differing addresses; automatic cross-email confirmation is not implemented.
 - A missing organization membership is created as `member`. Existing roles are preserved. Projects and groups are not assigned automatically.
-- Only a newly added organization membership produces one message in that organization's roster bot channel. It links directly to `/orgs/<slug>/v2/people/<username>/edit`, with the existing administrator permission checks. Leads coordinate assignment there with an organization administrator.
-- Linking an existing organization member stays quiet. Joining a second organization produces one notification in the second organization, while reusing the same roster person.
+- A newly added organization membership produces one combined join and GitHub-review message in that organization's roster bot channel. It links directly to `/orgs/<slug>/v2/people/<username>/edit`, with the existing administrator permission checks. Leads coordinate assignment there with an organization administrator.
+- Linking an existing organization member stays quiet when the submitted GitHub username is already approved. A pending GitHub submission produces one review notice in that organization’s roster bot channel, linking to the same Edit User page. Joining a second organization produces one combined notification in the second organization, while reusing the same roster person.
 - GitHub usernames submitted by members remain pending metadata until an administrator verifies/saves them in Edit User. Submission alone grants no GitHub access.
-- No recurring reminders or automatic retries of individual messages. Settings shows delivery status. `/roster-connect` explicitly requests a replacement for an unclaimed expired/failed invitation and invalidates its old link.
+- Review notices are recorded once per organization, member, and case-insensitive submitted GitHub username. Existing pending submissions can request their notice by running `/roster-connect` again. No recurring reminders or automatic retries of individual messages. Settings shows delivery status. `/roster-connect` explicitly requests a replacement for an unclaimed expired/failed invitation and invalidates its old link.
 
 `/roster-check` shows organization-scoped information. `/roster-extend` renews an expiring shared account through 90 days from the database's current date; it does not shorten a later date or accumulate time on repeated requests. Disabled accounts cannot self-extend; an enabled but expired account can renew. Never-expiring accounts remain unchanged.
 
@@ -344,7 +344,7 @@ Then use designated real test accounts:
 |---|---|
 | E4E credentials configured in KRG | Ownership verification fails |
 | Same LDAP group name in both organizations | Preview/execution contains only each organization's members and destinations |
-| Existing member links Slack | Identity links, role preserved, no join notification |
+| Existing member links Slack | Identity links and role preserved; no join notice; one review notice if their GitHub username needs approval |
 | New organization member onboards | Regular membership, no new resource groups, one correct-channel Edit User notification |
 | Refresh/replay completion or repeat scan | No second claim or notification |
 | Expired link, wrong account/email, disabled account | Rejected; explicit replacement or administrator help required |

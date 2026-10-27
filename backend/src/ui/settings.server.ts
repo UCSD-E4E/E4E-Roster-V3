@@ -188,7 +188,8 @@ export async function getIntegrationWorkbench(context: RosterUiContext) {
     db.query<{ action: string; target_username: string | null; details: Record<string, string>; created_at: string }>(`SELECT action, target_username, details, created_at::text FROM audit_log
       WHERE org_id=$1 AND (action LIKE 'integration_%' OR action IN ('self_extend_account','link_slack_identity','github_webhook_received')) ORDER BY id DESC LIMIT 20`, [context.org.id]),
     db.query<{ kind: string; identity: string; status: string }>(`SELECT 'Invitation' AS kind,slack_user_id AS identity,delivery_status AS status FROM slack_onboarding WHERE org_id=$1
-      UNION ALL SELECT 'Join notification',username,status FROM org_join_notifications WHERE org_id=$1`, [context.org.id]),
+      UNION ALL SELECT 'Join notification',username,status FROM org_join_notifications WHERE org_id=$1
+      UNION ALL SELECT 'GitHub review',username || ' → ' || github_username,status FROM github_review_notifications WHERE org_id=$1`, [context.org.id]),
   ]);
   return { plan, identities, events, deliveries };
 }

@@ -89,7 +89,16 @@ export async function userRequestedOnboarding(orgId: number, slackUserId: string
     ON CONFLICT (org_id,team_id,slack_user_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,expires_at=EXCLUDED.expires_at,
       slack_email=EXCLUDED.slack_email,delivery_status='user_requested'
     WHERE slack_onboarding.claimed_at IS NULL`, [orgId, connection.config.teamId, slackUserId, email, onboardingTokenHash(token)]);
-  if (!rowCount) return 'Your Slack identity is already connected. Use /roster-check to see your account.';
+  if (!rowCount) {
+    // Explicit requests also surface a pending submission made before review notices existed.
+    const { rows: [account] } = await db.query<{ username: string; github_username_pending: string }>(
+      `SELECT u.username,u.github_username_pending FROM slack_onboarding s
+       JOIN users u ON u.username=s.claimed_by JOIN user_orgs o ON o.username=u.username AND o.org_id=s.org_id
+       WHERE s.org_id=$1 AND s.team_id=$2 AND s.slack_user_id=$3 AND s.claimed_at IS NOT NULL
+         AND u.github_username_pending IS NOT NULL`, [orgId,connection.config.teamId,slackUserId]);
+    if (account) await notifyGithubReview(orgId, account.username, account.github_username_pending);
+    return 'Your Slack identity is already connected. Use /roster-check to see your account.';
+  }
   return `Sign in to connect your roster account and submit your GitHub username: ${origin}/connect/slack/${token}`;
 }
 
@@ -114,7 +123,7 @@ export async function completeSlackOnboarding(hash: string, user: AuthUser, gith
   const profile = existing[0] ?? directory;
   if (!profile || profile.disabled) throw new Error('An active directory account is required. Contact a project lead if you need an account.');
   if (profile.email?.trim().toLowerCase() !== slackEmail.trim().toLowerCase()) throw new Error('Your roster and Slack email addresses differ. Ask an organization administrator to link your Slack identity.');
-  const client = await db.connect(); let joined = false;
+  const client = await db.connect(); let joined = false; let pendingGithubUsername: string | null = null;
   try {
     await client.query('BEGIN');
     const { rowCount: enabled } = await client.query(`SELECT 1 FROM org_integrations WHERE org_id=$1 AND service='slack'
@@ -133,7 +142,10 @@ export async function completeSlackOnboarding(hash: string, user: AuthUser, gith
     await client.query(`INSERT INTO integration_identities (org_id,username,service,external_id) VALUES ($1,$2,'slack',$3) ON CONFLICT DO NOTHING`,
       [invitation.org_id,user.username,invitation.slack_user_id]);
     // Self-reported GitHub names are collected for review, not treated as proven ownership.
-    await client.query(`UPDATE users SET github_username_pending=CASE WHEN LOWER(github_username)=LOWER($1) THEN NULL ELSE $1 END,updated_at=NOW() WHERE username=$2`, [githubUsername,user.username]);
+    const { rows: [submission] } = await client.query<{ github_username_pending: string | null }>(
+      `UPDATE users SET github_username_pending=CASE WHEN LOWER(github_username)=LOWER($1) THEN NULL ELSE $1 END,updated_at=NOW()
+       WHERE username=$2 RETURNING github_username_pending`, [githubUsername,user.username]);
+    pendingGithubUsername = submission.github_username_pending;
     await client.query('UPDATE slack_onboarding SET claimed_by=$1,claimed_at=NOW() WHERE token_hash=$2', [user.username,hash]);
     await client.query(`INSERT INTO audit_log (org_id,actor,action,target_username,details) VALUES ($1,$2,'integration_onboarded',$2,$3)`,
       [invitation.org_id,user.username,JSON.stringify({ joined, slackUserId: invitation.slack_user_id, githubUsername, githubStatus: 'submitted' })]);
@@ -143,22 +155,60 @@ export async function completeSlackOnboarding(hash: string, user: AuthUser, gith
   // Refresh the signed-in user's membership list without changing role or group assignments.
   const memberships = await getUserOrgMemberships(user.username);
   user.orgs = memberships.map(row => ({ orgId: row.org_id, orgSlug: row.org_slug, orgName: row.org_name, role: row.role as 'member' | 'project_lead' | 'org_admin' }));
-  if (joined) await notifyOrganizationJoin(invitation.org_id, user.username);
+  if (joined) await notifyOrganizationJoin(invitation.org_id, user.username, pendingGithubUsername ?? undefined);
+  else if (pendingGithubUsername) await notifyGithubReview(invitation.org_id, user.username, pendingGithubUsername);
   return { joined, organization: invitation.name, accountPath: `/orgs/${encodeURIComponent(invitation.slug)}/v2/account` };
 }
 
-export async function notifyOrganizationJoin(orgId: number, username: string): Promise<void> {
+async function sendOrganizationNotice(orgId: number, username: string, message: (orgName: string) => string): Promise<void> {
+  const connection = await connectionFor(orgId, 'slack');
+  if (!connection.config.onboardingChannelId) throw new Error('No roster bot channel.');
+  const { rows: [org] } = await db.query<{ slug: string; name: string }>('SELECT slug,name FROM orgs WHERE id=$1', [orgId]);
+  const editUrl = `${rosterBaseUrl()}${personEditPath(org.slug,username)}`;
+  await integrationAdapters().slack(connection).sendMessage(connection.config.onboardingChannelId,
+    `${message(org.name)} Edit user: ${editUrl}`);
+}
+
+async function reserveGithubReview(orgId: number, username: string, githubUsername: string): Promise<boolean> {
+  // Only currently pending submissions qualify; case differences cannot create reminders.
+  const { rowCount } = await db.query(`INSERT INTO github_review_notifications (org_id,username,github_username)
+    SELECT o.org_id,u.username,LOWER(u.github_username_pending) FROM users u JOIN user_orgs o ON o.username=u.username
+    WHERE o.org_id=$1 AND u.username=$2 AND LOWER(u.github_username_pending)=LOWER($3)
+    ON CONFLICT DO NOTHING`, [orgId,username,githubUsername]);
+  return Boolean(rowCount);
+}
+
+async function markGithubReview(orgId: number, username: string, githubUsername: string, status: 'sent' | 'failed'): Promise<void> {
+  await db.query(`UPDATE github_review_notifications SET status=$4 WHERE org_id=$1 AND username=$2 AND github_username=LOWER($3)`,
+    [orgId,username,githubUsername,status]);
+}
+
+function githubReviewMessage(githubUsername: string): string {
+  return `GitHub username submitted for review: ${githubUsername}. A roster administrator should verify ownership, then save the GitHub username on Edit User to approve it.`;
+}
+
+export async function notifyOrganizationJoin(orgId: number, username: string, githubUsername?: string): Promise<void> {
   const { rowCount } = await db.query(`INSERT INTO org_join_notifications (org_id,username) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [orgId,username]);
   if (!rowCount) return;
+  const review = githubUsername ? await reserveGithubReview(orgId, username, githubUsername) : false;
   try {
-    const connection = await connectionFor(orgId, 'slack');
-    if (!connection.config.onboardingChannelId) throw new Error('No roster bot channel.');
-    const { rows: [org] } = await db.query<{ slug: string; name: string }>('SELECT slug,name FROM orgs WHERE id=$1', [orgId]);
-    const editUrl = `${rosterBaseUrl()}${personEditPath(org.slug,username)}`;
-    await integrationAdapters().slack(connection).sendMessage(connection.config.onboardingChannelId,
-      `A new regular member joined the ${org.name} roster: ${username}. Project leads: coordinate their project and group assignments with a roster administrator. Edit user: ${editUrl}`);
+    await sendOrganizationNotice(orgId, username, orgName =>
+      `A new regular member joined the ${orgName} roster: ${username}. Project leads: coordinate their project and group assignments with a roster administrator.${review ? ` ${githubReviewMessage(githubUsername!)}` : ''}`);
     await db.query(`UPDATE org_join_notifications SET status='sent' WHERE org_id=$1 AND username=$2`, [orgId,username]);
+    if (review) await markGithubReview(orgId, username, githubUsername!, 'sent');
   } catch {
     await db.query(`UPDATE org_join_notifications SET status='failed' WHERE org_id=$1 AND username=$2`, [orgId,username]);
+    if (review) await markGithubReview(orgId, username, githubUsername!, 'failed');
+  }
+}
+
+export async function notifyGithubReview(orgId: number, username: string, githubUsername: string): Promise<void> {
+  if (!await reserveGithubReview(orgId, username, githubUsername)) return;
+  try {
+    await sendOrganizationNotice(orgId, username, orgName =>
+      `${username} submitted a GitHub account for the ${orgName} roster. ${githubReviewMessage(githubUsername)}`);
+    await markGithubReview(orgId, username, githubUsername, 'sent');
+  } catch {
+    await markGithubReview(orgId, username, githubUsername, 'failed');
   }
 }

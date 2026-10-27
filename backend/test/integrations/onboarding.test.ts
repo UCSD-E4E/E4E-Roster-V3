@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import { AddressInfo } from 'net';
 import { db, runMigrations } from '../../src/services/db';
-import { scanSlackOnboarding, completeSlackOnboarding, notifyOrganizationJoin, onboardingTokenHash, onboardingDetails, userRequestedOnboarding, runDueSlackOnboarding } from '../../src/integrations/onboarding';
+import { scanSlackOnboarding, completeSlackOnboarding, notifyOrganizationJoin, notifyGithubReview, onboardingTokenHash, onboardingDetails, userRequestedOnboarding, runDueSlackOnboarding } from '../../src/integrations/onboarding';
 import { setIntegrationAdapters } from '../../src/integrations/providers';
 import { setLdapTestOverrides } from '../../src/services/ldap';
 import { createApp } from '../../src/app';
@@ -83,13 +83,16 @@ test('new member gets regular membership, scoped Slack link, pending GitHub user
   assert.deepEqual(profile,{ github_username: null,github_username_pending: 'octocat',ldap_groups: [] });
   assert.equal(messages.length,1); assert.equal(messages[0].channel,'CALPHA');
   assert(messages[0].text.includes('/orgs/alpha/v2/people/new/edit'));
+  assert(messages[0].text.includes('GitHub username submitted for review: octocat'));
   assert.equal(account.orgs[0].orgId,alpha);
   await notifyOrganizationJoin(alpha,'new'); assert.equal(messages.length,1);
+  await notifyGithubReview(alpha,'new','OCTOCAT'); assert.equal(messages.length,1);
   await assert.rejects(() => completeSlackOnboarding(onboardingTokenHash(invitation(alpha)),account,'octocat'),/expired|used/);
   assert.equal(messages.length,1);
 });
 
-test('existing organization member reconnects quietly and keeps their existing role', async () => {
+test('existing organization member reconnects quietly with an already approved GitHub username and keeps their role', async () => {
+  await db.query("UPDATE users SET github_username='existing-github' WHERE username='existing'");
   await db.query("UPDATE org_integrations SET config=config-'onboardingEnabled' WHERE org_id=$1 AND service='slack'",[alpha]);
   const response = await userRequestedOnboarding(alpha,'UEXISTING');
   const token = response.match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
@@ -97,6 +100,8 @@ test('existing organization member reconnects quietly and keeps their existing r
   assert.equal(result.joined,false); assert.equal(messages.length,1);
   const { rows: [membership] } = await db.query("SELECT role FROM user_orgs WHERE org_id=$1 AND username='existing'",[alpha]);
   assert.equal(membership.role,'org_admin');
+  const { rows: [profile] } = await db.query("SELECT github_username_pending FROM users WHERE username='existing'");
+  assert.equal(profile.github_username_pending,null);
   await db.query("UPDATE org_integrations SET config=jsonb_set(config,'{onboardingEnabled}','\"true\"') WHERE org_id=$1 AND service='slack'",[alpha]);
 });
 
@@ -195,4 +200,51 @@ test('turning weekly discovery off preserves an issued invitation but rebinding 
   const token = response.match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
   await db.query("UPDATE org_integrations SET config=jsonb_set(config,'{teamId}','\"TREBOUND\"') WHERE org_id=$1 AND service='slack'",[beta]);
   await assert.rejects(() => onboardingDetails(onboardingTokenHash(token)),/unavailable/);
+});
+
+test('an explicit reconnect surfaces a previously submitted GitHub account once in its own organization channel', async () => {
+  // This member claimed their link before GitHub review notices were available.
+  await db.query("UPDATE users SET github_username_pending='legacy-github' WHERE username='existing'");
+  const count = messages.length;
+  await Promise.all([userRequestedOnboarding(alpha,'UEXISTING'),userRequestedOnboarding(alpha,'UEXISTING')]);
+  assert.equal(messages.length,count+1);
+  assert.equal(messages.at(-1)?.orgId,alpha);
+  assert.equal(messages.at(-1)?.channel,'CALPHA');
+  assert(messages.at(-1)?.text.includes('GitHub username submitted for review: legacy-github'));
+  assert(messages.at(-1)?.text.includes('/orgs/alpha/v2/people/existing/edit'));
+  await userRequestedOnboarding(alpha,'UEXISTING');
+  assert.equal(messages.length,count+1);
+});
+
+test('an existing member submitting a different GitHub account gets one review notice and no join notice', async () => {
+  await db.query("DELETE FROM slack_onboarding WHERE org_id=$1 AND slack_user_id='UEXISTING'",[alpha]);
+  const response = await userRequestedOnboarding(alpha,'UEXISTING');
+  const token = response.match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
+  const count = messages.length;
+  const result = await completeSlackOnboarding(onboardingTokenHash(token),user('existing','existing@example.test'),'new-github');
+  assert.equal(result.joined,false);
+  assert.equal(messages.length,count+1);
+  assert.equal(messages.at(-1)?.channel,'CALPHA');
+  assert(messages.at(-1)?.text.includes('GitHub username submitted for review: new-github'));
+  assert(!messages.at(-1)?.text.includes('A new regular member joined'));
+  const { rows: [profile] } = await db.query("SELECT github_username,github_username_pending FROM users WHERE username='existing'");
+  assert.deepEqual(profile,{ github_username: 'existing-github',github_username_pending: 'new-github' });
+  await Promise.all([notifyGithubReview(alpha,'existing','NEW-GITHUB'),notifyGithubReview(alpha,'existing','new-github')]);
+  assert.equal(messages.length,count+1);
+});
+
+test('GitHub review delivery failures are recorded without retries and resolved submissions stay quiet', async () => {
+  await db.query("UPDATE users SET github_username_pending='failed-github' WHERE username='existing'");
+  const count = messages.length;
+  failMessages = true;
+  try { await notifyGithubReview(alpha,'existing','failed-github'); }
+  finally { failMessages = false; }
+  await notifyGithubReview(alpha,'existing','FAILED-GITHUB');
+  assert.equal(messages.length,count);
+  const { rows: [state] } = await db.query("SELECT status FROM github_review_notifications WHERE org_id=$1 AND username='existing' AND github_username='failed-github'",[alpha]);
+  assert.equal(state.status,'failed');
+  await db.query("UPDATE users SET github_username_pending=NULL WHERE username='existing'");
+  await notifyGithubReview(alpha,'existing','another-github');
+  await userRequestedOnboarding(alpha,'UEXISTING');
+  assert.equal(messages.length,count);
 });

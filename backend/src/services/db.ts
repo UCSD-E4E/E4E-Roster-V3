@@ -229,6 +229,15 @@ export async function runMigrations(): Promise<void> {
       FOREIGN KEY (username, org_id) REFERENCES user_orgs(username, org_id) ON DELETE CASCADE,
       PRIMARY KEY (org_id, username)
     )`);
+    await client.query(`CREATE TABLE IF NOT EXISTS github_review_notifications (
+      org_id INTEGER NOT NULL,
+      username VARCHAR(100) NOT NULL,
+      github_username TEXT NOT NULL,
+      attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      status TEXT NOT NULL DEFAULT 'attempted',
+      FOREIGN KEY (username, org_id) REFERENCES user_orgs(username, org_id) ON DELETE CASCADE,
+      PRIMARY KEY (org_id, username, github_username)
+    )`);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

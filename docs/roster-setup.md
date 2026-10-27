@@ -84,7 +84,7 @@ Use a distinct Slack app/workspace connection per roster organization. Socket Mo
 2. Verify/save the GitHub username using the existing **Edit User** page. Self-submitted usernames remain pending until reviewed.
 3. In organization Settings → Groups, map a test group to Slack channel IDs and GitHub team slugs. Preview, then apply grants. Accept any GitHub organization invitation before checking team access.
 4. Test `/roster-check` and `/roster-extend`. Expiration changes affect the shared directory account across organizations.
-5. Enable **Check Slack weekly** after the test succeeds. New organization members are added as regular members and generate one message in the configured bot channel, linking to **Edit User** for project/group assignment. Linking an existing organization member sends no join notification.
+5. Enable **Check Slack weekly** after the test succeeds. New organization members are added as regular members and generate one message in the configured bot channel, linking to **Edit User** for project/group assignment. Linking an existing organization member sends no join notification; a pending GitHub username sends one review notice linking to the same Edit User page. Already approved usernames stay quiet.
 6. Optionally enable `INTEGRATION_AUTO_SYNC=true` after verifying mappings. Keeping it false disables scheduled grants only; manual apply and relevant user saves can still grant access.
 
 Keep database backups and the matching encryption key recoverable together. See the [full runbook](deployment.md) for acceptance tests, updates, and rollback.
