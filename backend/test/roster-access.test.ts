@@ -1056,6 +1056,34 @@ test('the React project settings workspace is admin-only and rejects foreign gro
     body: 'intent=add-group&ldapGroup=beta-team',
   });
   assert.equal(forged.status, 400);
+  assert.match(await forged.text(), /role="alert">LDAP group does not belong to this organization/);
+});
+
+test('project settings can add and remove an existing organization utility group', async () => {
+  await db.query("INSERT INTO org_groups (org_id, ldap_group) VALUES ($1, 'E4E-NAS')", [fixture.alphaId]);
+  const path = `/orgs/alpha/v2/projects/${fixture.alphaProjectId}/settings`;
+  try {
+    const added = await request(path, 'alpha-admin', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'intent=add-group&ldapGroup=E4E-NAS',
+    });
+    assert.equal(added.status, 302, await added.text());
+    const { rows } = await db.query('SELECT ldap_group FROM project_ldap_groups WHERE project_id=$1 AND ldap_group=$2', [fixture.alphaProjectId, 'E4E-NAS']);
+    assert.deepEqual(rows, [{ ldap_group: 'E4E-NAS' }]);
+    const page = await request(path, 'alpha-admin');
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /name="ldapGroup" value="E4E-NAS"/);
+    const removed = await request(path, 'alpha-admin', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'intent=remove-group&ldapGroup=E4E-NAS',
+    });
+    assert.equal(removed.status, 302);
+    const remaining = await db.query('SELECT 1 FROM project_ldap_groups WHERE project_id=$1 AND ldap_group=$2', [fixture.alphaProjectId, 'E4E-NAS']);
+    assert.equal(remaining.rowCount, 0);
+  } finally {
+    await db.query("DELETE FROM project_ldap_groups WHERE project_id=$1 AND ldap_group='E4E-NAS'", [fixture.alphaProjectId]);
+    await db.query("DELETE FROM org_groups WHERE org_id=$1 AND ldap_group='E4E-NAS'", [fixture.alphaId]);
+  }
 });
 
 test('the React project creation action creates only within the active organisation', async () => {

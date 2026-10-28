@@ -286,6 +286,7 @@ export function ProjectSettingsPage(): React.JSX.Element {
     <>
       <Link to={`/projects/${project.id}`} className="back-link">← {project.name}</Link>
       <WorkspacePageHeader eyebrow="Project settings" title={project.name} description="Project groups control which organization members appear in this project roster." />
+      <FormError />
       <div className="settings-grid project-settings-grid">
         <section className="form-card">
           <h2>Project details</h2>

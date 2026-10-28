@@ -304,7 +304,7 @@ export async function addProjectGroup(
   requireOrgAdmin(context);
   const { rowCount } = await db.query(
     `INSERT INTO project_ldap_groups (project_id, ldap_group)
-     SELECT $1, $2 FROM org_groups WHERE org_id = $3 AND ldap_group = $2
+     SELECT $1, ldap_group FROM org_groups WHERE org_id = $3 AND ldap_group = $2
      ON CONFLICT DO NOTHING`,
     [projectId, ldapGroup, context.org.id],
   );
