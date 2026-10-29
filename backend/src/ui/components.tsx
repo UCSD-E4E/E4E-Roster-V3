@@ -9,8 +9,6 @@ import {
 } from 'react-router';
 import type { ProjectDetail, ProjectMemberAudit, ProjectSummary, RosterUiContext } from './projects.server';
 import type { OrgPerson, OrgPersonEdit, PersonSearchResult } from './people.server';
-import { IntegrationWorkbenchPanel } from './integration-workbench';
-import type { IntegrationSettings } from './settings.server';
 import type { AccountProfile } from './account.server';
 import type { DashboardSummary } from './dashboard.server';
 import { canAdminOrg } from './access';
@@ -19,7 +17,7 @@ export interface ShellData {
   context: RosterUiContext;
 }
 
-function FormError(): React.JSX.Element | null {
+export function FormError(): React.JSX.Element | null {
   const actionData = useActionData() as { formError?: string } | undefined;
   return actionData?.formError ? <p className="form-error" role="alert">{actionData.formError}</p> : null;
 }
@@ -456,33 +454,6 @@ export function PeoplePage(): React.JSX.Element {
       </section>
     </>
   );
-}
-
-export function SettingsPage(): React.JSX.Element {
-  const { settings } = useLoaderData() as { settings: IntegrationSettings; context: RosterUiContext };
-
-  return (
-    <>
-      <WorkspacePageHeader
-        eyebrow="Organization workspace"
-        title="Settings"
-        description="Integration configuration belongs to this organization and is available only to organization administrators. Secrets are write-only."
-      />
-      <p className="form-copy"><Link className="row-link" to="/settings/groups">Manage group roles and integration mappings</Link></p>
-      <FormError />
-      <section className="settings-grid" aria-label="Integration settings">
-        <section className="form-card"><form className="workspace-form" method="post"><input type="hidden" name="intent" value="github" /><p className="eyebrow">Integration</p><h2>GitHub</h2><label><span><input type="checkbox" name="enabled" value="true" defaultChecked={settings.github.enabled} /> Enable GitHub integration</span></label><label>App ID<input name="appId" defaultValue={settings.github.appId} /></label><label>Installation ID<input name="installationId" defaultValue={settings.github.installationId} /></label><label>Organization<input name="org" defaultValue={settings.github.org} /></label><label>Private key <span className="form-optional">{settings.github.hasPrivateKey ? 'configured; leave blank to retain' : 'optional until enabled'}</span><textarea name="privateKey" rows={4} autoComplete="off" /></label><label>Webhook secret <span className="form-optional">{settings.github.hasWebhookSecret ? 'configured; leave blank to retain' : 'optional for outgoing operations'}</span><input name="webhookSecret" type="password" autoComplete="new-password" /></label><button className="button primary" type="submit">Save GitHub settings</button></form></section>
-        <section className="form-card"><form className="workspace-form" method="post"><input type="hidden" name="intent" value="slack" /><p className="eyebrow">Integration</p><h2>Slack</h2><label><span><input type="checkbox" name="enabled" value="true" defaultChecked={settings.slack.enabled} /> Enable Slack integration</span></label><label>Workspace ID<input name="teamId" defaultValue={settings.slack.teamId} /></label><label>Bot token <span className="form-optional">{settings.slack.hasBotToken ? 'configured; leave blank to retain' : 'optional until enabled'}</span><input name="botToken" type="password" autoComplete="new-password" /></label><label>App-level token (xapp…) <span className="form-optional">{settings.slack.hasAppToken ? 'configured; leave blank to retain' : 'needed for Socket Mode commands'}</span><input name="appToken" type="password" autoComplete="new-password" /></label><label>Roster bot channel ID<input name="onboardingChannelId" defaultValue={settings.slack.onboardingChannelId} placeholder="C0123456789" /><span className="form-hint">Invite the bot and project leads to this channel. Join and GitHub review notices link to Edit User.</span></label><label><span><input type="checkbox" name="onboardingEnabled" value="true" defaultChecked={settings.slack.onboardingEnabled} /> Check Slack weekly and invite missing members to connect</span><span className="form-hint">People can always use /roster-connect while Slack is enabled. This setting controls automatic invitations.</span></label><button className="button primary" type="submit">Save Slack settings</button></form></section>
-      </section>
-      <IntegrationWorkbenchPanel />
-    </>
-  );
-}
-
-export function GroupMappingsPage(): React.JSX.Element {
-  const { mappings } = useLoaderData() as { mappings: import('./settings.server').OrgGroupMappingSettings; context: RosterUiContext };
-  const selected = mappings.selectedGroup;
-  return <><Link to="/settings" className="back-link">← Settings</Link><WorkspacePageHeader eyebrow="Organization workspace" title="Group mappings" description="Set organization roles and map roster groups to GitHub teams or Slack channels." /><FormError /><div className="settings-grid"><section className="content-card"><form className="person-search" method="get"><label htmlFor="mapping-group">Choose a group</label><div><select id="mapping-group" name="group" defaultValue={selected ?? ''}><option value="">Select a group</option>{mappings.groups.map((group) => <option key={group} value={group}>{group}</option>)}</select><button className="button secondary" type="submit">Open</button></div></form></section><section className="form-card"><form className="workspace-form" method="post"><input type="hidden" name="intent" value="create" /><h2>Create organization group</h2><label>Group name<input name="groupName" required /></label><label>Project <span className="form-optional">optional</span><select name="projectId" defaultValue=""><option value="">Organization-only group</option>{mappings.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><button className="button secondary" type="submit">Create group</button></form></section></div>{selected ? <div className="settings-grid"><section className="form-card"><form className="workspace-form" method="post"><input type="hidden" name="intent" value="role" /><input type="hidden" name="ldapGroup" value={selected} /><h2>{selected} role</h2><p className="form-copy">Assigning a role grants it to matching directory users after membership sync.</p><label>Organization role<select name="role" defaultValue={mappings.role ?? ''}><option value="">No role</option><option value="member">Member</option><option value="project_lead">Project lead</option><option value="org_admin">Organization admin</option><option value="utility">Utility (no membership)</option></select></label><button className="button primary" type="submit">Save role</button></form></section><section className="form-card"><form className="workspace-form" method="post"><input type="hidden" name="intent" value="add" /><input type="hidden" name="ldapGroup" value={selected} /><h2>Add integration mapping</h2><label>Service<select name="service" defaultValue="github"><option value="github">GitHub team</option><option value="slack">Slack channel</option></select></label><label>Target ID<input name="targetId" required placeholder="team slug or channel ID" /></label><label>Target name<input name="targetName" required placeholder="Visible name" /></label><button className="button primary" type="submit">Add mapping</button></form></section></div> : null}{selected ? <section className="content-card"><div className="section-heading"><div><p className="eyebrow">Integration targets</p><h2>{mappings.mappings.length} {mappings.mappings.length === 1 ? 'mapping' : 'mappings'}</h2></div><form method="post"><input type="hidden" name="intent" value="sync" /><input type="hidden" name="ldapGroup" value={selected} /><button className="button secondary" type="submit">Sync integrations</button></form></div>{mappings.mappings.length === 0 ? <p className="empty-inline">No integration targets are mapped to this group.</p> : <div className="table-wrap"><table><thead><tr><th>Service</th><th>Target</th><th></th></tr></thead><tbody>{mappings.mappings.map((mapping) => <tr key={mapping.id}><td>{mapping.service}</td><td><code>{mapping.targetId}</code> {mapping.targetName}</td><td><form method="post"><input type="hidden" name="intent" value="delete" /><input type="hidden" name="ldapGroup" value={selected} /><input type="hidden" name="id" value={mapping.id} /><button className="danger-link" type="submit">Remove</button></form></td></tr>)}</tbody></table></div>}</section> : <section className="empty-state compact"><p>Select an organization group to manage its role and integration targets.</p></section>}</>;
 }
 
 export function PeopleAddPage(): React.JSX.Element {

@@ -8,10 +8,11 @@ import {
   StaticRouterProvider,
   type RouteObject,
 } from 'react-router';
-import { AccountPage, DashboardPage, GroupMappingsPage, PeopleAddPage, PeopleCreatePage, PeopleEditPage, PeoplePage, PersonProvisionResultPage, ProjectAddPersonPage, ProjectAuditPage, ProjectCreatePage, ProjectCreatePersonPage, ProjectMemberEditPage, ProjectPage, ProjectSettingsPage, ProjectsPage, RosterShell, RouteErrorPage, SettingsPage } from './components';
+import { AccountPage, DashboardPage, PeopleAddPage, PeopleCreatePage, PeopleEditPage, PeoplePage, PersonProvisionResultPage, ProjectAddPersonPage, ProjectAuditPage, ProjectCreatePage, ProjectCreatePersonPage, ProjectMemberEditPage, ProjectPage, ProjectSettingsPage, ProjectsPage, RosterShell, RouteErrorPage } from './components';
 import { addProjectGroup, createProject, getProject, getProjectMemberAudit, getProjectMemberEdit, getProjectSettings, listProjects, removeProjectGroup, RosterUiContext, updateProject } from './projects.server';
 import { getOrgPersonEdit, listOrgGroups, listPeople, searchDirectoryPeople, searchPeople, syncOrganizationDirectory } from './people.server';
-import { addOrgGroupIntegrationMapping, createOrganizationGroup, getIntegrationWorkbench, integrationTool, getIntegrationSettings, getOrgGroupMappingSettings, removeOrgGroupIntegrationMapping, setOrgGroupRole, syncOrganizationIntegrations, updateGithubSettings, updateSlackSettings } from './settings.server';
+import { addOrgGroupIntegrationMapping, createOrganizationGroup, getIntegrationWorkbench, integrationTool, getIntegrationSettings, getOrganizationGroups, setGroupProjects, removeOrgGroupIntegrationMapping, setOrgGroupRole, syncOrganizationIntegrations, updateGithubSettings, updateSlackSettings } from './settings.server';
+import { SettingsPage, type SettingsTab } from './organization-settings';
 import { getAccountProfile, updateAccountProfile } from './account.server';
 import { getDashboardSummary } from './dashboard.server';
 import { addOrganizationPerson, updateOrganizationPerson } from './people-write.server';
@@ -39,6 +40,24 @@ function contextFromExpress(req: ExpressRequest, res: Response): RosterUiContext
 }
 
 function routesFor(context: RosterUiContext, req: ExpressRequest): RouteObject[] {
+  const settingsLoader = async (request: globalThis.Request) => {
+    const requestedTab = new URL(request.url).searchParams.get('tab');
+    const tab: SettingsTab = requestedTab === 'integrations' || requestedTab === 'debug' ? requestedTab : 'groups';
+    return { settings: await getIntegrationSettings(context), directory: await getOrganizationGroups(context),
+      workbench: tab === 'debug' ? await getIntegrationWorkbench(context) : undefined,
+      saved: new URL(request.url).searchParams.get('saved') === '1', tab, context };
+  };
+  const groupAction = async (form: FormData, legacy = false) => {
+    const intent = String(form.get('intent') ?? '');
+    let group = String(form.get('ldapGroup') ?? '');
+    if (intent === 'create') group = await createOrganizationGroup(context, { name: String(form.get('groupName') ?? ''), projectId: String(form.get('projectId') ?? '') });
+    else if (intent === 'role') await setOrgGroupRole(context, group, String(form.get('role') ?? ''));
+    else if (intent === 'projects') await setGroupProjects(context, group, form.getAll('projectIds').map(String));
+    else if (intent === 'add') await addOrgGroupIntegrationMapping(context, { ldapGroup: group, service: String(form.get('service') ?? ''), targetId: String(form.get('targetId') ?? ''), targetName: String(form.get('targetName') ?? '') });
+    else if (intent === 'delete') await removeOrgGroupIntegrationMapping(context, Number(form.get('id')));
+    else throw data('Unknown group mapping action.', { status: 400 });
+    return redirect(legacy ? `/settings/groups?group=${encodeURIComponent(group)}` : '/settings?tab=groups&saved=1');
+  };
   return [{
     path: '/',
     element: <RosterShell />,
@@ -157,31 +176,28 @@ function routesFor(context: RosterUiContext, req: ExpressRequest): RouteObject[]
         path: 'settings',
         element: <SettingsPage />,
         errorElement: <RouteErrorPage />,
-        loader: async () => ({ settings: await getIntegrationSettings(context), workbench: await getIntegrationWorkbench(context), context }),
+        loader: ({ request }) => settingsLoader(request),
         action: ({ request }) => keepFormError(async () => {
           const form = await request.formData();
           const intent = String(form.get('intent') ?? '');
+          if (['create', 'role', 'projects', 'add', 'delete'].includes(intent)) return groupAction(form);
           if (['verify', 'sync', 'link-slack', 'scan-slack'].includes(intent)) return integrationTool(context, { intent, service: String(form.get('service') ?? ''), username: String(form.get('username') ?? ''), externalId: String(form.get('externalId') ?? '') });
           if (intent === 'github') {
             await updateGithubSettings(context, { enabled: form.get('enabled') === 'true', appId: String(form.get('appId') ?? '').trim(), installationId: String(form.get('installationId') ?? '').trim(), org: String(form.get('org') ?? '').trim(), privateKey: String(form.get('privateKey') ?? '').trim(), webhookSecret: String(form.get('webhookSecret') ?? '').trim() });
           } else if (intent === 'slack') {
             await updateSlackSettings(context, { enabled: form.get('enabled') === 'true', teamId: String(form.get('teamId') ?? '').trim(), botToken: String(form.get('botToken') ?? '').trim(), appToken: String(form.get('appToken') ?? '').trim(), onboardingEnabled: form.get('onboardingEnabled') === 'true', onboardingChannelId: String(form.get('onboardingChannelId') ?? '').trim() });
           } else throw data('Unknown settings action.', { status: 400 });
-          return redirect('/settings');
+          return redirect('/settings?tab=integrations&saved=1');
         }),
       },
-      { path: 'settings/groups', element: <GroupMappingsPage />, errorElement: <RouteErrorPage />, loader: async ({ request }) => ({ mappings: await getOrgGroupMappingSettings(context, new URL(request.url).searchParams.get('group')), context }), action: ({ request }) => keepFormError(async () => {
-        const form = await request.formData(); const intent = String(form.get('intent') ?? ''); const group = String(form.get('ldapGroup') ?? '');
-        if (intent === 'create') {
-          const created = await createOrganizationGroup(context, { name: String(form.get('groupName') ?? ''), projectId: String(form.get('projectId') ?? '') });
-          return redirect(`/settings/groups?group=${encodeURIComponent(created)}`);
-        } else if (intent === 'role') await setOrgGroupRole(context, group, String(form.get('role') ?? ''));
-        else if (intent === 'add') await addOrgGroupIntegrationMapping(context, { ldapGroup: group, service: String(form.get('service') ?? ''), targetId: String(form.get('targetId') ?? ''), targetName: String(form.get('targetName') ?? '') });
-        else if (intent === 'delete') await removeOrgGroupIntegrationMapping(context, Number(form.get('id')));
-        else if (intent === 'sync') { await syncOrganizationIntegrations(context); }
-        else throw data('Unknown group mapping action.', { status: 400 });
-        return redirect(`/settings/groups?group=${encodeURIComponent(group)}`);
-      }) },
+      { path: 'settings/groups', element: <SettingsPage />, errorElement: <RouteErrorPage />,
+        loader: ({ request }) => settingsLoader(request),
+        action: ({ request }) => keepFormError(async () => {
+          const form = await request.formData();
+          if (form.get('intent') === 'sync') { await syncOrganizationIntegrations(context); return redirect('/settings?tab=groups'); }
+          return groupAction(form, true);
+        }),
+      },
       {
         path: 'projects/:projectId',
         element: <ProjectPage />,

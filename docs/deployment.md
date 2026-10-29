@@ -263,7 +263,7 @@ Use the existing system administration UI to create E4E/KRG organizations and ma
 Within each organization:
 
 - Configure its projects and available directory groups.
-- Use `/orgs/<slug>/v2/settings/groups` to attach GitHub team slugs and Slack channel IDs to groups. IDs/slugs are resolved within that organization's provider connection.
+- Use organization Settings → Groups to assign groups to projects and attach GitHub team slugs and Slack channel IDs to groups. IDs/slugs are resolved within that organization's provider connection.
 - Use the preview before applying grants. Active organization membership, matching groups, identity links, and enabled connections are required. Disabled/expired accounts are excluded.
 
 Creating organization membership alone does not assign project/resource groups. Existing project leads do not gain organization-admin permissions through notifications or onboarding.
@@ -282,10 +282,10 @@ For this implementation, create **one Slack app per workspace**, with a distinct
    ```
 
 4. Confirm all three slash commands exist: `/roster-connect`, `/roster-check`, `/roster-extend`. No public Slack request URL is required for Socket Mode. Reinstall the app after changing scopes.
-5. Obtain the workspace ID (`T…`). In that roster organization's Settings, enter workspace ID, bot token, app-level token, and enable Slack. Secret fields are write-only; leaving one blank retains its saved value.
-6. Click **Verify slack and list destinations**. A bot token from a different workspace is rejected. The backend refreshes socket configuration about every 15 seconds; check the tenant-specific connected/failed log message.
+5. Obtain the workspace ID (`T…`). In that roster organization's Settings → Integrations, enter workspace ID, bot token, app-level token, and enable Slack. Secret fields are write-only; leaving one blank retains its saved value.
+6. Save the Slack settings, open **Debug**, and click **Verify slack and list destinations**. A bot token from a different workspace is rejected. The backend refreshes socket configuration about every 15 seconds; check the tenant-specific connected/failed log message.
 7. Create/select a roster bot channel. Invite the bot, project leads, and appropriate organization administrators to it. Enter its channel **ID**, not name, in **Roster bot channel ID**. Public channel memberships can be joined by the bot; private channels require inviting the bot manually.
-8. Link a designated test user's Slack member ID in Settings or have that user run `/roster-connect`. Keep weekly discovery off until the full flow has been validated.
+8. Link a designated test user's Slack member ID in Settings → Debug or have that user run `/roster-connect`. Keep weekly discovery off until the full flow has been validated.
 9. Add a test group/channel mapping, preview grants, then apply once. Confirm only the intended workspace/member/channel changes.
 
 Only a unique configured workspace resolves to a roster organization. Do not configure the same workspace for both E4E and KRG. [Slack Socket Mode reference](https://docs.slack.dev/tools/bolt-js/concepts/socket-mode/).
@@ -304,7 +304,7 @@ After validation, enable **Check Slack weekly** for that organization. The backe
 - A newly added organization membership produces one combined join and GitHub-review message in that organization's roster bot channel. It links directly to `/orgs/<slug>/v2/people/<username>/edit`, with the existing administrator permission checks. Leads coordinate assignment there with an organization administrator.
 - Linking an existing organization member stays quiet when the submitted GitHub username is already approved. A pending GitHub submission produces one review notice in that organization’s roster bot channel, linking to the same Edit User page. Joining a second organization produces one combined notification in the second organization, while reusing the same roster person.
 - GitHub usernames submitted by members remain pending metadata until an administrator verifies/saves them in Edit User. Submission alone grants no GitHub access.
-- Review notices are recorded once per organization, member, and case-insensitive submitted GitHub username. Existing pending submissions can request their notice by running `/roster-connect` again. No recurring reminders or automatic retries of individual messages. Settings shows delivery status. `/roster-connect` explicitly requests a replacement for an unclaimed expired/failed invitation and invalidates its old link.
+- Review notices are recorded once per organization, member, and case-insensitive submitted GitHub username. Existing pending submissions can request their notice by running `/roster-connect` again. No recurring reminders or automatic retries of individual messages. Settings → Debug shows delivery status. `/roster-connect` explicitly requests a replacement for an unclaimed expired/failed invitation and invalidates its old link.
 
 `/roster-check` shows organization-scoped information. `/roster-extend` renews an expiring shared account through 90 days from the database's current date; it does not shorten a later date or accumulate time on repeated requests. Disabled accounts cannot self-extend; an enabled but expired account can renew. Never-expiring accounts remain unchanged.
 
@@ -315,7 +315,7 @@ A dedicated app per organization is straightforward for the initial rollout. Ins
 1. In the GitHub organization's Settings → Developer settings → GitHub Apps, register an app with a unique name and the roster's HTTPS homepage.
 2. Grant **Organization permissions → Members: Read and write**. Team membership operations do not require repository Administration permission. Grant no additional repository permission unless a separate implemented feature requires it.
 3. Generate a private key. Record the numeric App ID, install the app into the organization, and record the numeric Installation ID from its installation settings URL.
-4. In that roster organization's Settings, enter App ID, Installation ID, organization login, and full PEM private key. Enable GitHub and click **Verify github and list destinations**. The backend checks installation ownership and Members write permission.
+4. In that roster organization's Settings → Integrations, enter App ID, Installation ID, organization login, and full PEM private key. Enable GitHub and save, then open **Debug** and click **Verify github and list destinations**. The backend checks installation ownership and Members write permission.
 5. Verify a test member's GitHub account before saving the trusted username in the existing Edit User page. A submitted name or pending onboarding value is not proof of GitHub ownership; OAuth verification is not implemented.
 6. Configure a group mapping using a real **team slug**, not its display name or numeric ID. Preview the grant, then apply it. Existing team memberships/maintainer roles are preserved. New memberships may be `pending` until the recipient accepts the invitation.
 7. Give teams their repository access through GitHub's normal administration. The roster does not currently create direct repository grants or remove access.
@@ -326,7 +326,7 @@ GitHub IdP-managed team synchronization can prevent API membership changes. Use 
 
 Outgoing API access can be tested with the GitHub App webhook initially inactive. To enable observation of organization membership events:
 
-1. Read the exact webhook path shown in the roster Settings page: `https://<ROSTER_HOST>/webhooks/github/<numeric-roster-org-id>`.
+1. Read the exact webhook path shown in roster Settings → Debug: `https://<ROSTER_HOST>/webhooks/github/<numeric-roster-org-id>`.
 2. Generate a separate strong webhook secret and enter the same value in GitHub App settings and that roster organization's GitHub Settings.
 3. Set the webhook URL, enable it, and subscribe to organization membership events. Preserve TLS verification and the signature header through the proxy.
 4. Deliver a signed ping. Expect HTTP 202. Then validate a real membership delivery matches the configured installation and GitHub organization and appears in that organization's audit history.

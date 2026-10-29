@@ -59,14 +59,14 @@ Register the exact callback URL in Authentik. Provide `openid profile email grou
 
 In system administration, create each organization and map directory groups to its roles. Configure its projects and directory groups. Confirm an organization administrator can open `/orgs/<slug>/v2/settings`.
 
-Repeat the following provider setup separately for each organization.
+Organization Settings has **Groups**, **Integrations**, and **Debug** tabs. Integration activity is retained in the existing admin audit log. Repeat the following provider setup separately for each organization.
 
 ## 5. Connect Slack
 
 1. Create a Slack app in the organization's workspace using [backend/slack-app-manifest.yml](../backend/slack-app-manifest.yml).
 2. Enable Socket Mode. Create an app-level `xapp-…` token with `connections:write`.
 3. Install the app and copy its `xoxb-…` Bot User OAuth Token. Confirm `/roster-connect`, `/roster-check`, and `/roster-extend` are installed.
-4. In organization Settings, enter the workspace ID (`T…`), bot token, and app-level token. Enable Slack and click **Verify slack and list destinations**.
+4. In organization Settings → Integrations, enter the workspace ID (`T…`), bot token, and app-level token. Enable Slack and save, then open **Debug** and click **Verify slack and list destinations**.
 5. Create a roster bot channel, invite the bot and project leads/admins, and save its channel ID under **Roster bot channel ID**. Invite the bot manually to any private destination channels.
 
 Use a distinct Slack app/workspace connection per roster organization. Socket Mode needs outbound connectivity; no inbound Slack endpoint is required.
@@ -75,14 +75,14 @@ Use a distinct Slack app/workspace connection per roster organization. Socket Mo
 
 1. Register a GitHub App in the matching GitHub organization. Set its homepage to the roster URL and grant **Organization permissions → Members: Read and write**.
 2. Generate a private key, install the app into that organization, and record its App ID and Installation ID.
-3. In roster organization Settings, enter the GitHub organization, App ID, Installation ID, and private key. Enable GitHub and verify/list destinations.
-4. If using webhooks, copy the webhook URL shown in roster Settings into the GitHub App, configure the same webhook secret on both sides, and enable membership events. Webhooks are optional for outgoing membership grants.
+3. In roster organization Settings → Integrations, enter the GitHub organization, App ID, Installation ID, and private key. Enable GitHub and save, then verify/list destinations under **Debug**.
+4. If using webhooks, copy the webhook URL shown in roster Settings → Debug into the GitHub App, configure the same webhook secret on both sides, and enable membership events. Webhooks are optional for outgoing membership grants.
 
 ## 7. Test, then enable onboarding
 
 1. With Slack enabled, have a test user run `/roster-connect`, sign in through SSO, and enter a GitHub username. This works with **Check Slack weekly** off. They must already have an active directory account; Slack and roster email addresses must match.
 2. Verify/save the GitHub username using the existing **Edit User** page. Self-submitted usernames remain pending until reviewed.
-3. In organization Settings → Groups, map a test group to Slack channel IDs and GitHub team slugs. Preview, then apply grants. Accept any GitHub organization invitation before checking team access.
+3. In organization Settings → Groups, map a test group to Slack channel IDs and GitHub team slugs. Use **Sync integrations** to apply grants; inspect the preview under **Debug** first if needed. Accept any GitHub organization invitation before checking team access.
 4. Test `/roster-check` and `/roster-extend`. Expiration changes affect the shared directory account across organizations.
 5. Enable **Check Slack weekly** after the test succeeds. New organization members are added as regular members and generate one message in the configured bot channel, linking to **Edit User** for project/group assignment. Linking an existing organization member sends no join notification; a pending GitHub username sends one review notice linking to the same Edit User page. Already approved usernames stay quiet.
 6. Optionally enable `INTEGRATION_AUTO_SYNC=true` after verifying mappings. Keeping it false disables scheduled grants only; manual apply and relevant user saves can still grant access.

@@ -857,7 +857,54 @@ test('the React settings workspace requires an organisation admin', async () => 
 
   const allowed = await request('/orgs/alpha/v2/settings', 'alpha-admin');
   assert.equal(allowed.status, 200);
-  assert.match(await allowed.text(), /Save GitHub settings/);
+  assert.match(await allowed.text(), /Organization groups/);
+});
+
+test('organization settings separates groups, credentials and debug tools into tabs', async () => {
+  const groups = await request('/orgs/alpha/v2/settings', 'alpha-admin');
+  const groupBody = await groups.text();
+  assert.match(groupBody, /Organization settings/);
+  assert.match(groupBody, /Member type/);
+  assert.match(groupBody, /Project assignments/);
+  assert.match(groupBody, /popover="auto"/);
+  assert.doesNotMatch(groupBody, /Save GitHub settings|Link Slack identity|beta-team/);
+  const integrations = await request('/orgs/alpha/v2/settings?tab=integrations', 'alpha-admin');
+  const integrationBody = await integrations.text();
+  assert.match(integrationBody, /Save GitHub settings/);
+  assert.match(integrationBody, /Save Slack settings/);
+  assert.doesNotMatch(integrationBody, /Link Slack identity|Recent integration activity/);
+  const debug = await request('/orgs/alpha/v2/settings?tab=debug', 'alpha-admin');
+  const debugBody = await debug.text();
+  assert.match(debugBody, /Connection checks/);
+  assert.match(debugBody, /Link Slack identity/);
+  assert.doesNotMatch(debugBody, /Save Slack settings|Recent integration activity|beta-member/);
+  for (const tab of ['groups', 'integrations', 'debug']) {
+    const denied = await request(`/orgs/alpha/v2/settings?tab=${tab}`, 'alpha-member');
+    assert.equal(denied.status, 403);
+  }
+});
+
+test('group project assignments replace only this organization assignments and reject foreign projects atomically', async () => {
+  const { rows: [extra] } = await db.query<{ id: number }>("INSERT INTO projects (name,org_id) VALUES ('Extra alpha',$1) RETURNING id", [fixture.alphaId]);
+  const path = '/orgs/alpha/v2/settings?tab=groups';
+  const save = (projects: number[], username = 'alpha-admin', group = 'shared') => request(path, username, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams([['intent','projects'],['ldapGroup',group],...projects.map(id => ['projectIds',String(id)])]).toString(),
+  });
+  const assignments = async () => (await db.query<{ project_id: number }>("SELECT project_id FROM project_ldap_groups WHERE ldap_group='shared' ORDER BY project_id")).rows.map(p => p.project_id);
+  try {
+    assert.equal((await save([fixture.alphaProjectId, extra.id])).status, 302);
+    assert.deepEqual(await assignments(), [fixture.alphaProjectId,fixture.betaProjectId,extra.id].sort((a,b) => a-b));
+    assert.equal((await save([fixture.betaProjectId])).status, 400);
+    assert.deepEqual(await assignments(), [fixture.alphaProjectId,fixture.betaProjectId,extra.id].sort((a,b) => a-b));
+    assert.equal((await save([extra.id], 'alpha-member')).status, 403);
+    assert.equal((await save([extra.id], 'alpha-admin', 'beta-team')).status, 400);
+    assert.equal((await save([])).status, 302);
+    assert.deepEqual(await assignments(), [fixture.betaProjectId]);
+  } finally {
+    await db.query("INSERT INTO project_ldap_groups (project_id,ldap_group) VALUES ($1,'shared') ON CONFLICT DO NOTHING", [fixture.alphaProjectId]);
+    await db.query('DELETE FROM projects WHERE id=$1', [extra.id]);
+  }
 });
 
 test('the React settings action writes only the active organisation integration', async () => {
