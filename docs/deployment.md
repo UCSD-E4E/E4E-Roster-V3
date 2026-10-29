@@ -32,7 +32,7 @@ Release scope confirmed by the project owner on 2026-10-23: retain the existing 
 - The dependency update pins `body-parser` 1.20.9 and `http-cache-semantics` 4.3.0 through the lockfile. Rerun the dependency audit and application tests for the release revision.
 - Preserve PostgreSQL and its matching encryption key together. Directory expiration writes and database writes remain separate operations.
 
-Do not expose the auto-authenticated demo server or deploy with `SKIP_OIDC=true`. The demo is not a production entry point.
+Do not expose the auto-authenticated demo server. The production image excludes its launcher, and production startup rejects `SKIP_OIDC=true`. Fake-user authentication is restricted to `NODE_ENV=test`; the normal server does not enable it.
 
 ## 2. Architecture and trust boundaries
 

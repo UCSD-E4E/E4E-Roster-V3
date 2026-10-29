@@ -7,7 +7,7 @@ COPY backend/package*.json ./
 RUN npm install
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
-RUN npm run build
+RUN npm run build && rm -f dist/scripts/demo-integrations.js
 
 FROM node:24.22.1-bookworm-slim AS runner
 WORKDIR /app

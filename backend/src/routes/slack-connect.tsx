@@ -27,8 +27,8 @@ export function slackConnectRouter(): Router {
       if (!req.session.slackOnboardingHash) throw new Error('Open your personal connection link from Slack.');
       const details = await onboardingDetails(req.session.slackOnboardingHash);
       res.type('html').send('<!doctype html>'+renderToStaticMarkup(<SlackConnectPage organization={details.name} username={req.isAuthenticated() ? req.user?.username : undefined} />));
-    } catch (error) {
-      res.status(400).type('html').send('<!doctype html>'+renderToStaticMarkup(<SlackConnectPage error={error instanceof Error ? error.message : 'Connection unavailable.'} />));
+    } catch {
+      res.status(400).type('html').send('<!doctype html>'+renderToStaticMarkup(<SlackConnectPage error="Open a fresh connection link from Slack. The previous link may be expired or unavailable." />));
     }
   });
   router.post('/', requireSameOriginMutation, async (req, res, next) => {

@@ -39,12 +39,15 @@ async function bootstrap(): Promise<void> {
   if (!SESSION_SECRET) {
     throw new Error('SESSION_SECRET env var is required');
   }
+  if (SKIP_OIDC === 'true' && process.env.NODE_ENV === 'production') {
+    throw new Error('SKIP_OIDC is not allowed in production.');
+  }
 
   // The break-glass local-login route still needs Passport session support
   // when OIDC discovery is skipped for a disposable local environment.
   setupPassportSession();
 
-  // TEMPORARY: see DEBUG_CHANGES.md — skip OIDC discovery for local testing without Authentik
+  // Explicit local testing can run without Authentik; production cannot skip OIDC.
   if (SKIP_OIDC === 'true') {
     console.warn('[startup] SKIP_OIDC=true — OIDC auth disabled, localhost debug routes only');
   } else {

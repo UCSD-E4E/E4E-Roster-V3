@@ -26,6 +26,9 @@ export interface CreateAppOptions {
 }
 
 export function createApp(options: CreateAppOptions = {}): express.Application {
+  if (options.testUserFromRequest && process.env.NODE_ENV !== 'test') {
+    throw new Error('Test authentication is available only in test environments.');
+  }
   const app = express();
 
   const viewsDir  = process.env.VIEWS_DIR  ?? path.join(__dirname, '../views');
