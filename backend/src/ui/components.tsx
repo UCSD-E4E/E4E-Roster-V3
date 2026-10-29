@@ -1,3 +1,4 @@
+import { PersonStatus } from './person-status';
 import React from 'react';
 import {
   Link,
@@ -120,7 +121,7 @@ export function AccountPage(): React.JSX.Element {
       <section className="form-card account-summary"><h2>Identity</h2><dl className="account-details">
         <dt>Name</dt><dd>{name}</dd><dt>Username</dt><dd><code>{context.user.username}</code></dd>
         <dt>Institutional email</dt><dd>{profile.email || '—'}</dd><dt>Role</dt><dd>{profile.role || '—'}</dd>
-        <dt>Status</dt><dd><span className={`status ${profile.disabled ? 'disabled' : 'active'}`}>{profile.disabled ? 'Disabled' : 'Active'}</span></dd>
+        <dt>Status</dt><dd><PersonStatus status={profile.status} username={context.user.username} /></dd>
         <dt>Expiry</dt><dd>{profile.expiryDate || 'No expiry'}</dd>
       </dl></section>
       <section className="form-card account-summary"><h2>Integrations</h2><dl className="account-details">
@@ -229,7 +230,7 @@ export function ProjectPage(): React.JSX.Element {
                       <td><strong><a className="person-link" href={editUrl}>{[member.firstName, member.lastName].filter(Boolean).join(' ') || member.username}</a></strong><small>{member.username} · {member.email}</small></td>
                       <td>{member.role || '—'}</td>
                       <td><div className="tag-row">{member.groups.map((group) => <span className="tag small" key={group}>{group}</span>)}</div></td>
-                      <td><span className={member.disabled ? 'status disabled' : 'status active'}>{member.disabled ? 'Disabled' : 'Active'}</span></td>
+                      <td><PersonStatus status={member.status} username={member.username} /></td>
                       <td>
                         <div className="row-actions">
                           <a className="row-link" href={editUrl}>Manage</a>
@@ -444,7 +445,7 @@ export function PeoplePage(): React.JSX.Element {
                   <td>{person.orgRole.replace('_', ' ')}</td>
                   <td><div className="tag-row table-tags">{person.groups.length ? person.groups.map((group) => <span className="tag small" key={group}>{group}</span>) : '—'}</div></td>
                   <td className="wide-column">{person.expiryDate ?? 'No expiry'}</td>
-                  <td><span className={person.disabled ? 'status disabled' : 'status active'}>{person.disabled ? 'Disabled' : 'Active'}</span></td>
+                  <td><PersonStatus status={person.status} username={person.username} /></td>
                   <td>{isAdmin && <Link className="row-link" to={`/people/${person.username}/edit`}>Manage</Link>}</td>
                 </tr>
               ))}</tbody>

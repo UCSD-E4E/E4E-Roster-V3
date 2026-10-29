@@ -1,9 +1,11 @@
+import { getPersonStatuses, type PersonStatus } from './person-status.server';
 import { db } from '../services/db';
 import * as ldap from '../services/ldap';
 import { data } from 'react-router';
 import type { RosterUiContext } from './projects.server';
 
 export interface AccountProfile {
+  status: PersonStatus;
   firstName: string | null;
   lastName: string | null;
   email: string | null;
@@ -34,7 +36,9 @@ export async function getAccountProfile(context: RosterUiContext): Promise<Accou
   ]);
   const profile = rows[0];
   if (!profile) return null;
+  const statuses = await getPersonStatuses(context.user.isLocalAdmin ? undefined : context.org.id, context.user.username);
   return {
+    status: statuses.get(context.user.username)!,
     firstName: profile.first_name, lastName: profile.last_name, email: profile.email,
     secondaryEmail: profile.secondary_email, phone: profile.phone, role: profile.role,
     expiryDate: profile.expiry_date, disabled: profile.disabled,

@@ -404,3 +404,9 @@ Stop onboarding/grant activity first. Preserve current DB/key backups, inspect t
 | Scan unexpectedly appears immediately after restart | Due scans run at startup; per-org opt-in and persisted discovery state determine eligibility |
 
 Keep diagnostics free of tokens, PEM keys, runtime env-file contents, and full onboarding URLs. Describe the failing tenant, operation, status, and timestamp instead.
+
+### People status indicators
+
+Organization People, project member lists, the system directory, and My Account share the same status breakdown. Green **Ready** means the account is active and all currently required integration grants have confirmed results, or no grants are required. Yellow **Needs attention** indicates a missing identity, pending GitHub review/invitation, or failed grant. Gray **Unverified** means required access lacks a confirmed result for the current identity, connection, and destination mapping. Red distinguishes **Expired** from **Disabled**; expiration uses the same database date boundary as integration sync.
+
+Click a status to inspect each destination and its last-check timestamp. Results describe the latest recorded sync, not live provider membership; run integration sync to refresh them. Changing a connection invalidates earlier results. Disabled providers and groups the person does not belong to do not count as requirements. Organization views show only that organization's requirements; the system directory aggregates them across organizations. An unassigned project is a separate hint, not an integration failure.

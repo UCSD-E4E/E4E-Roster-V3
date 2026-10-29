@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import type { AddressInfo } from 'node:net';
+import { getPersonStatuses } from '../src/ui/person-status.server';
 import * as ldap from '../src/services/ldap';
 import { createApp } from '../src/app';
 import { db, ensureUserOrgMembership, runMigrations } from '../src/services/db';
@@ -1287,5 +1288,86 @@ test('the React project add action rejects a forged group before LDAP is called'
     assert.match(await response.text(), /Submitted groups do not belong to this project/);
   } finally {
     ldap.setLdapTestOverrides(undefined);
+  }
+});
+
+
+test('people status distinguishes required access, pending invitations, failures and expiration across every people view', async () => {
+  const who = 'alpha-member';
+  const lookup = async () => (await getPersonStatuses(fixture.alphaId, who)).get(who)!;
+  const record = async (service: string, externalId: string, outcome: string, action = 'integration_grant') => db.query(
+    'INSERT INTO audit_log(org_id,actor,action,target_username,details) VALUES($1,$2,$3,$4,$5)',
+    [fixture.alphaId,'status-test',action,who,JSON.stringify({ service,externalId,targetId:service === 'github' ? 'status-team' : 'CSTATUS',outcome })]);
+  ldap.setLdapTestOverrides({ getUser: async () => null });
+  try {
+    await db.query("UPDATE users SET expiry_date=NULL,disabled=FALSE,github_username=NULL,github_username_pending=NULL WHERE username=$1",[who]);
+    assert.equal((await lookup()).kind,'ready'); // No required integrations.
+    await db.query(`INSERT INTO org_integrations(org_id,service,enabled,config) VALUES ($1,'github',TRUE,'{}'),($1,'slack',TRUE,'{}')
+      ON CONFLICT(org_id,service) DO UPDATE SET enabled=TRUE,updated_at=NOW()`,[fixture.alphaId]);
+    await db.query(`INSERT INTO group_mappings(org_id,ldap_group,service,target_id,target_name) VALUES
+      ($1,'alpha-team','github','status-team','Status team'),($1,'alpha-team','slack','CSTATUS','Status channel')`,[fixture.alphaId]);
+    assert.equal((await lookup()).kind,'attention');
+    assert.ok((await lookup()).details.some(d => d.message === 'Account not linked'));
+    await db.query("UPDATE users SET github_username='status-github' WHERE username=$1",[who]);
+    await db.query("INSERT INTO integration_identities(org_id,username,service,external_id) VALUES($1,$2,'slack','USTATUS')",[fixture.alphaId,who]);
+    assert.equal((await lookup()).kind,'unverified');
+    await record('slack','USTATUS','invited');
+    await record('github','status-github','pending');
+    assert.equal((await lookup()).kind,'attention');
+    assert.ok((await lookup()).details.some(d => d.message === 'Invitation pending acceptance'));
+    await record('github','status-github','active');
+    assert.equal((await lookup()).kind,'ready');
+    assert.ok((await lookup()).details.filter(d => d.checkedAt).length === 2);
+    await db.query("INSERT INTO user_orgs(username,org_id) VALUES($1,$2)",[who,fixture.betaId]);
+    await db.query("INSERT INTO org_integrations(org_id,service,enabled,config) VALUES($1,'github',TRUE,'{}')",[fixture.betaId]);
+    await db.query("INSERT INTO group_mappings(org_id,ldap_group,service,target_id,target_name) VALUES($1,'shared','github','status-team','Other organization team')",[fixture.betaId]);
+    assert.equal((await getPersonStatuses(fixture.betaId,who)).get(who)!.kind,'unverified');
+    assert.equal((await getPersonStatuses(undefined,who)).get(who)!.kind,'unverified');
+    assert.equal((await lookup()).kind,'ready'); // The other organization is not shown in this workspace.
+    await db.query("DELETE FROM group_mappings WHERE org_id=$1 AND target_id='status-team'",[fixture.betaId]);
+    await db.query('DELETE FROM org_integrations WHERE org_id=$1',[fixture.betaId]);
+    await db.query('DELETE FROM user_orgs WHERE org_id=$1 AND username=$2',[fixture.betaId,who]);
+    for (const path of ['/orgs/alpha/v2/people',`/orgs/alpha/v2/projects/${fixture.alphaProjectId}`,'/system/v2/users','/orgs/alpha/v2/account']) {
+      const response = await request(path,path.startsWith('/system') ? 'local-admin' : path.endsWith('/account') ? who : 'alpha-admin');
+      assert.equal(response.status,200);
+      assert.match(await response.text(),/Ready: status details for alpha-member/);
+    }
+    const systemVisitor = users.get('local-admin')!;
+    systemVisitor.isLocalAdmin = false; systemVisitor.isSystemAdmin = true;
+    try {
+      const page = await request('/orgs/alpha/v2/account', 'local-admin');
+      assert.equal(page.status, 200); // System administrators can visit an org without a user_orgs row.
+      assert.match(await page.text(), /Ready: status details for local-admin/);
+    } finally { systemVisitor.isLocalAdmin = true; systemVisitor.isSystemAdmin = false; }
+    await db.query('UPDATE org_integrations SET updated_at=NOW() WHERE org_id=$1',[fixture.alphaId]);
+    assert.equal((await lookup()).kind,'unverified'); // A changed connection must be checked again.
+    await record('slack','USTATUS','already_member');
+    await record('github','status-github','active');
+    await record('github','status-github','', 'integration_grant_failed');
+    assert.equal((await lookup()).kind,'attention');
+    await db.query("UPDATE users SET github_username_pending='new-account' WHERE username=$1",[who]);
+    assert.ok((await lookup()).details.some(d => d.message.includes('pending review')));
+    await db.query("UPDATE users SET github_username_pending=NULL,github_username='replacement' WHERE username=$1",[who]);
+    assert.equal((await lookup()).kind,'unverified'); // Old identity receipts cannot certify the replacement.
+    await db.query("UPDATE users SET expiry_date=CURRENT_DATE WHERE username=$1",[who]);
+    assert.notEqual((await lookup()).label,'Expired');
+    await db.query("UPDATE users SET expiry_date=CURRENT_DATE-1 WHERE username=$1",[who]);
+    assert.equal((await lookup()).label,'Expired');
+    await db.query('UPDATE users SET disabled=TRUE WHERE username=$1',[who]);
+    assert.equal((await lookup()).label,'Disabled');
+    assert.ok((await lookup()).details.some(d => d.label === 'Expiration'));
+    const beta = (await getPersonStatuses(fixture.betaId)).get('beta-member')!;
+    assert.equal(beta.kind,'ready');
+    assert.ok(!beta.details.some(d => d.label.includes('Status team')));
+  } finally {
+    ldap.setLdapTestOverrides(undefined);
+    await db.query("DELETE FROM audit_log WHERE actor='status-test'");
+    await db.query("DELETE FROM group_mappings WHERE org_id=$1 AND target_id='status-team'",[fixture.betaId]);
+    await db.query('DELETE FROM org_integrations WHERE org_id=$1',[fixture.betaId]);
+    await db.query('DELETE FROM user_orgs WHERE org_id=$1 AND username=$2',[fixture.betaId,who]);
+    await db.query("DELETE FROM group_mappings WHERE org_id=$1 AND target_id=ANY($2::text[])",[fixture.alphaId,['status-team','CSTATUS']]);
+    await db.query('DELETE FROM integration_identities WHERE org_id=$1 AND username=$2',[fixture.alphaId,who]);
+    await db.query('DELETE FROM org_integrations WHERE org_id=$1',[fixture.alphaId]);
+    await db.query('UPDATE users SET expiry_date=NULL,disabled=FALSE,github_username=NULL,github_username_pending=NULL WHERE username=$1',[who]);
   }
 });

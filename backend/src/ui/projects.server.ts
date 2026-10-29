@@ -1,3 +1,4 @@
+import { getPersonStatuses, type PersonStatus } from './person-status.server';
 import { db } from '../services/db';
 import * as ldap from '../services/ldap';
 import { AuthUser, OrgMembership } from '../types/user';
@@ -20,6 +21,7 @@ export interface ProjectSummary {
 }
 
 export interface ProjectMember {
+  status: PersonStatus;
   username: string;
   firstName: string | null;
   lastName: string | null;
@@ -157,6 +159,7 @@ export async function getProject(
     `, [projectId, context.org.id]),
   ]);
 
+  const statuses = await getPersonStatuses(context.org.id);
   return {
     id: project.id,
     name: project.name,
@@ -164,6 +167,7 @@ export async function getProject(
     memberCount: memberRows.length,
     groups: groupRows.map((row) => row.ldap_group),
     members: memberRows.map((row) => ({
+      status: statuses.get(row.username)!,
       username: row.username,
       firstName: row.first_name,
       lastName: row.last_name,

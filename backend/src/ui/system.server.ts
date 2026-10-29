@@ -1,3 +1,4 @@
+import { getPersonStatuses, type PersonStatus } from './person-status.server';
 import bcrypt from 'bcryptjs';
 import { data } from 'react-router';
 import { db } from '../services/db';
@@ -41,6 +42,7 @@ export interface SystemAuditEntry {
 }
 
 export interface SystemUserSummary {
+  status: PersonStatus;
   username: string;
   firstName: string | null;
   lastName: string | null;
@@ -128,13 +130,14 @@ export async function listSystemUsers(sort = 'name', direction = 'asc'): Promise
     role: string | null; expiry_date: string | null; disabled: boolean; ldap_groups: string[];
   }>(`SELECT username, first_name, last_name, email, role, TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date, disabled, ldap_groups
       FROM users ORDER BY last_name, first_name, username`);
-  const users = rows.map((row) => ({ username: row.username, firstName: row.first_name, lastName: row.last_name, email: row.email, role: row.role, expiryDate: row.expiry_date, disabled: row.disabled, ldapGroups: row.ldap_groups ?? [] }));
+  const statuses = await getPersonStatuses();
+  const users = rows.map((row) => ({ status: statuses.get(row.username)!, username: row.username, firstName: row.first_name, lastName: row.last_name, email: row.email, role: row.role, expiryDate: row.expiry_date, disabled: row.disabled, ldapGroups: row.ldap_groups ?? [] }));
   const values: Record<string, (user: SystemUserSummary) => string> = {
     name: (user) => `${user.lastName ?? ''}\u0000${user.firstName ?? ''}\u0000${user.username}`,
     role: (user) => user.role ?? '',
     groups: (user) => user.ldapGroups.join('\u0000'),
     expiry: (user) => user.expiryDate ?? '',
-    status: (user) => user.disabled ? 'disabled' : 'active',
+    status: (user) => String(user.status.rank),
   };
   const value = values[sort] ?? values.name;
   const multiplier = direction === 'desc' ? -1 : 1;

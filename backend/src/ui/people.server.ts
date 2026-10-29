@@ -1,3 +1,4 @@
+import { getPersonStatuses, type PersonStatus } from './person-status.server';
 import { data } from 'react-router';
 import { db } from '../services/db';
 import * as ldap from '../services/ldap';
@@ -6,6 +7,7 @@ import { canViewPeople, requireOrgAdmin } from './access';
 import type { RosterUiContext } from './projects.server';
 
 export interface OrgPerson {
+  status: PersonStatus;
   username: string;
   firstName: string | null;
   lastName: string | null;
@@ -70,7 +72,9 @@ export async function listPeople(context: RosterUiContext, sort = 'name', direct
     ORDER BY u.last_name, u.first_name, u.username
   `, [context.org.id]);
 
+  const statuses = await getPersonStatuses(context.org.id);
   const people = rows.map((row) => ({
+    status: statuses.get(row.username)!,
     username: row.username,
     firstName: row.first_name,
     lastName: row.last_name,
@@ -86,7 +90,7 @@ export async function listPeople(context: RosterUiContext, sort = 'name', direct
     role: (person) => person.orgRole,
     groups: (person) => person.groups.join('\u0000'),
     expiry: (person) => person.expiryDate ?? '',
-    status: (person) => person.disabled ? 'disabled' : 'active',
+    status: (person) => String(person.status.rank),
   };
   const value = values[sort] ?? values.name;
   const multiplier = direction === 'desc' ? -1 : 1;
