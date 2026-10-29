@@ -183,7 +183,7 @@ export function ProjectsPage(): React.JSX.Element {
 }
 
 export function ProjectPage(): React.JSX.Element {
-  const { project, context } = useLoaderData() as { project: ProjectDetail; context: RosterUiContext };
+  const { project, context, sort, direction } = useLoaderData() as { project: ProjectDetail; context: RosterUiContext; sort: string; direction: string };
   const isAdmin = canAdminOrg(context);
 
   return (
@@ -219,7 +219,7 @@ export function ProjectPage(): React.JSX.Element {
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Person</th><th>Role</th><th>Project groups</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
+              <thead><tr><SortableHeader label="Person" sort="name" currentSort={sort} direction={direction} /><SortableHeader label="Role" sort="role" currentSort={sort} direction={direction} /><SortableHeader label="Project groups" sort="groups" currentSort={sort} direction={direction} /><SortableHeader label="Status" sort="status" currentSort={sort} direction={direction} /><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {project.members.map((member) => {
                   const editUrl = isAdmin

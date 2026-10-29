@@ -202,12 +202,15 @@ function routesFor(context: RosterUiContext, req: ExpressRequest): RouteObject[]
         path: 'projects/:projectId',
         element: <ProjectPage />,
         errorElement: <RouteErrorPage />,
-        loader: async ({ params }) => {
+        loader: async ({ params, request }) => {
           const projectId = Number(params.projectId);
           if (!Number.isInteger(projectId)) throw data('Invalid project ID.', { status: 400 });
-          const project = await getProject(context, projectId);
+          const search = new URL(request.url).searchParams;
+          const sort = search.get('sort') ?? 'name';
+          const direction = search.get('dir') === 'desc' ? 'desc' : 'asc';
+          const project = await getProject(context, projectId, sort, direction);
           if (!project) throw data('Project not found.', { status: 404 });
-          return { project, context };
+          return { project, context, sort, direction };
         },
         action: ({ request, params }) => keepFormError(async () => {
           const projectId = Number(params.projectId);

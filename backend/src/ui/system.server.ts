@@ -1,3 +1,4 @@
+import { sortPeople } from './people-sort';
 import { getPersonStatuses, type PersonStatus } from './person-status.server';
 import bcrypt from 'bcryptjs';
 import { data } from 'react-router';
@@ -132,20 +133,11 @@ export async function listSystemUsers(sort = 'name', direction = 'asc'): Promise
       FROM users ORDER BY last_name, first_name, username`);
   const statuses = await getPersonStatuses();
   const users = rows.map((row) => ({ status: statuses.get(row.username)!, username: row.username, firstName: row.first_name, lastName: row.last_name, email: row.email, role: row.role, expiryDate: row.expiry_date, disabled: row.disabled, ldapGroups: row.ldap_groups ?? [] }));
-  const values: Record<string, (user: SystemUserSummary) => string> = {
-    name: (user) => `${user.lastName ?? ''}\u0000${user.firstName ?? ''}\u0000${user.username}`,
+  return sortPeople(users, sort, direction, {
     role: (user) => user.role ?? '',
     groups: (user) => user.ldapGroups.join('\u0000'),
     expiry: (user) => user.expiryDate ?? '',
     status: (user) => String(user.status.rank),
-  };
-  const value = values[sort] ?? values.name;
-  const multiplier = direction === 'desc' ? -1 : 1;
-  return users.sort((left, right) => {
-    const leftValue = value(left); const rightValue = value(right);
-    if (!leftValue) return rightValue ? 1 : 0;
-    if (!rightValue) return -1;
-    return leftValue.localeCompare(rightValue) * multiplier;
   });
 }
 

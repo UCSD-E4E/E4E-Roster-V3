@@ -1,3 +1,4 @@
+import { sortPeople } from './people-sort';
 import { getPersonStatuses, type PersonStatus } from './person-status.server';
 import { data } from 'react-router';
 import { db } from '../services/db';
@@ -85,20 +86,11 @@ export async function listPeople(context: RosterUiContext, sort = 'name', direct
     disabled: row.disabled,
     groups: row.org_groups,
   }));
-  const values: Record<string, (person: OrgPerson) => string> = {
-    name: (person) => `${person.lastName ?? ''}\u0000${person.firstName ?? ''}\u0000${person.username}`,
+  return sortPeople(people, sort, direction, {
     role: (person) => person.orgRole,
     groups: (person) => person.groups.join('\u0000'),
     expiry: (person) => person.expiryDate ?? '',
     status: (person) => String(person.status.rank),
-  };
-  const value = values[sort] ?? values.name;
-  const multiplier = direction === 'desc' ? -1 : 1;
-  return people.sort((left, right) => {
-    const leftValue = value(left); const rightValue = value(right);
-    if (!leftValue) return rightValue ? 1 : 0;
-    if (!rightValue) return -1;
-    return leftValue.localeCompare(rightValue) * multiplier;
   });
 }
 

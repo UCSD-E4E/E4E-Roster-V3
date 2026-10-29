@@ -1371,3 +1371,30 @@ test('people status distinguishes required access, pending invitations, failures
     await db.query('UPDATE users SET expiry_date=NULL,disabled=FALSE,github_username=NULL,github_username_pending=NULL WHERE username=$1',[who]);
   }
 });
+
+
+test('all people tables sort names by first name and project member headers toggle ordering', async () => {
+  await db.query("UPDATE users SET first_name='Zoe',last_name='Aaron' WHERE username='alpha-admin'");
+  await db.query("UPDATE users SET first_name='Aaron',last_name='Zoe' WHERE username='alpha-member'");
+  try {
+    for (const path of ['/orgs/alpha/v2/people',`/orgs/alpha/v2/projects/${fixture.alphaProjectId}`,'/system/v2/users']) {
+      for (const direction of ['asc','desc']) {
+        const page = await request(`${path}?sort=name&dir=${direction}`,path.startsWith('/system') ? 'local-admin' : 'alpha-admin');
+        assert.equal(page.status,200);
+        const body = await page.text();
+        const first = body.indexOf('Aaron Zoe'); const last = body.indexOf('Zoe Aaron');
+        assert.ok(first >= 0 && last >= 0);
+        assert.ok(direction === 'asc' ? first < last : last < first);
+        assert.ok(body.includes(`sort=name&amp;dir=${direction === 'asc' ? 'desc' : 'asc'}`));
+      }
+    }
+    const project = await request(`/orgs/alpha/v2/projects/${fixture.alphaProjectId}?sort=status`, 'alpha-lead');
+    const body = await project.text();
+    assert.equal(project.status,200);
+    for (const column of ['name','role','groups','status']) assert.ok(body.includes(`?sort=${column}&amp;dir=`));
+    assert.match(body, /aria-sort="ascending"/);
+  } finally {
+    await db.query("UPDATE users SET first_name='Alpha',last_name='Admin' WHERE username='alpha-admin'");
+    await db.query("UPDATE users SET first_name='Alpha',last_name='Member' WHERE username='alpha-member'");
+  }
+});
