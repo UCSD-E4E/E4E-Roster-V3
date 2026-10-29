@@ -39,7 +39,7 @@ export function startIntegrationRuntime(): () => Promise<void> {
             await ack();
             try {
               const current = await resolveConnection('slack', 'teamId', payload.team_id);
-              const text = command === '/roster-connect' ? await userRequestedOnboarding(current.orgId, payload.user_id) : await handleSlackCommand(payload.team_id, payload.user_id, command);
+              const text = command === '/roster-connect' ? await userRequestedOnboarding(current.orgId, payload.user_id, payload.text) : await handleSlackCommand(payload.team_id, payload.user_id, command);
               await respond({ response_type: 'ephemeral', text });
             }
             catch (error) { await respond({ response_type: 'ephemeral', text: error instanceof Error ? error.message : 'Roster operation failed.' }); }

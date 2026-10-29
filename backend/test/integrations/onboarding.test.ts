@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import { AddressInfo } from 'net';
 import { db, runMigrations } from '../../src/services/db';
-import { scanSlackOnboarding, completeSlackOnboarding, notifyOrganizationJoin, notifyGithubReview, onboardingTokenHash, onboardingDetails, userRequestedOnboarding, runDueSlackOnboarding } from '../../src/integrations/onboarding';
+import { scanSlackOnboarding, completeSlackOnboarding, notifyOrganizationJoin, notifyGithubReview, onboardingTokenHash, onboardingDetails, userRequestedOnboarding, runDueSlackOnboarding, confirmSlackOnboarding } from '../../src/integrations/onboarding';
 import { setIntegrationAdapters } from '../../src/integrations/providers';
 import { setLdapTestOverrides } from '../../src/services/ldap';
 import { createApp } from '../../src/app';
@@ -124,7 +124,9 @@ test('notification delivery failure is recorded and never automatically retried'
 
 test('wrong account, malformed GitHub username, disabled account and disabled connection cannot claim invitations', async () => {
   const hash = onboardingTokenHash(invitation(alpha,'UOTHER'));
-  await assert.rejects(() => completeSlackOnboarding(hash,user('new','new@example.test'),'octocat'),/email addresses differ/);
+  const pending = await completeSlackOnboarding(hash,user('new','new@example.test'),'octocat');
+  assert.equal(pending.confirmationRequired,true);
+  const unclaimed = await onboardingDetails(hash); assert.equal(unclaimed.slack_user_id,'UOTHER');
   await assert.rejects(() => completeSlackOnboarding(hash,user('other','other@example.test'),'https://github.com/octocat'),/valid GitHub/);
   await assert.rejects(() => completeSlackOnboarding(hash,user('disabled','disabled@example.test'),'octocat'),/active directory/);
   await db.query("UPDATE org_integrations SET enabled=FALSE WHERE org_id=$1 AND service='slack'",[alpha]);
@@ -247,4 +249,97 @@ test('GitHub review delivery failures are recorded without retries and resolved 
   await notifyGithubReview(alpha,'existing','another-github');
   await userRequestedOnboarding(alpha,'UEXISTING');
   assert.equal(messages.length,count);
+});
+
+
+test('different emails require proof from the exact Slack account before membership or linking can change', async () => {
+  const { rows: [org] } = await db.query<{ id: number }>("INSERT INTO orgs(slug,name) VALUES('different-email','Different Email') RETURNING id");
+  await db.query("INSERT INTO users(username,email,disabled) VALUES('cross-email','roster@example.test',FALSE)");
+  await db.query("INSERT INTO org_integrations(org_id,service,enabled,config) VALUES($1,'slack',TRUE,$2)",[org.id,JSON.stringify({teamId:'TCROSS',onboardingChannelId:'CCROSS'})]);
+  const token = (await userRequestedOnboarding(org.id,'UOTHER')).match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
+  let hash = onboardingTokenHash(token); const account = user('cross-email','roster@example.test');
+  const start = async () => {
+    const pending = await completeSlackOnboarding(hash,account,'cross-github');
+    assert.equal(pending.confirmationRequired,true);
+    if (!pending.confirmationRequired) throw new Error('Expected Slack confirmation');
+    assert.match(pending.confirmationCode,/^[A-F0-9]{16}$/);
+    return pending.confirmationCode;
+  };
+  const count = messages.length;
+  const first = await start();
+  const { rows: [proof] } = await db.query('SELECT confirmation_code_hash FROM slack_onboarding WHERE token_hash=$1',[hash]);
+  assert.equal(proof.confirmation_code_hash,onboardingTokenHash(first)); assert.notEqual(proof.confirmation_code_hash,first);
+  assert.equal((await db.query('SELECT 1 FROM user_orgs WHERE org_id=$1 AND username=$2',[org.id,account.username])).rowCount,0);
+  assert.equal((await db.query('SELECT 1 FROM integration_identities WHERE org_id=$1',[org.id])).rowCount,0);
+  assert.equal(messages.length,count);
+  await assert.rejects(()=>confirmSlackOnboarding(org.id,'UEXISTING',first),/unavailable/);
+  await assert.rejects(()=>confirmSlackOnboarding(alpha,'UOTHER',first),/unavailable/);
+  await assert.rejects(()=>confirmSlackOnboarding(org.id,'UOTHER','bad'),/confirmation code/);
+  await db.query("UPDATE slack_onboarding SET confirmation_expires_at=NOW()-INTERVAL '1 second' WHERE token_hash=$1",[hash]);
+  await assert.rejects(()=>confirmSlackOnboarding(org.id,'UOTHER',first),/expired/);
+  const second = await start(); assert.notEqual(second,first);
+  await assert.rejects(()=>confirmSlackOnboarding(org.id,'UOTHER',first),/unavailable/);
+  assert.match(await userRequestedOnboarding(org.id,'UOTHER',second),/cross-email/);
+  assert.equal((await db.query('SELECT 1 FROM user_orgs WHERE org_id=$1 AND username=$2',[org.id,account.username])).rowCount,0);
+  const oldHash = hash;
+  const replacement = (await userRequestedOnboarding(org.id,'UOTHER')).match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
+  hash = onboardingTokenHash(replacement);
+  assert.notEqual(hash,oldHash);
+  await assert.rejects(()=>completeSlackOnboarding(oldHash,account,'cross-github'),/unavailable|expired/);
+  await assert.rejects(()=>confirmSlackOnboarding(org.id,'UOTHER',second),/unavailable/);
+  const { rows: [reset] } = await db.query('SELECT confirmed_at,confirmation_code_hash FROM slack_onboarding WHERE token_hash=$1',[hash]);
+  assert.deepEqual(reset,{confirmed_at:null,confirmation_code_hash:null});
+  const other = await completeSlackOnboarding(hash,user('existing','existing@example.test'),'other-github');
+  assert.equal(other.confirmationRequired,true); // Confirmation cannot transfer between signed-in roster users.
+  await assert.rejects(()=>confirmSlackOnboarding(org.id,'UOTHER',second),/unavailable/);
+  const third = await start();
+  await confirmSlackOnboarding(org.id,'UOTHER',third);
+  await db.query('UPDATE users SET disabled=TRUE WHERE username=$1',[account.username]);
+  await assert.rejects(()=>completeSlackOnboarding(hash,account,'cross-github'),/active directory/);
+  await db.query('UPDATE users SET disabled=FALSE WHERE username=$1',[account.username]);
+  const attempts = await Promise.allSettled([completeSlackOnboarding(hash,account,'cross-github'),completeSlackOnboarding(hash,account,'cross-github')]);
+  assert.equal(attempts.filter(r=>r.status==='fulfilled').length,1);
+  assert.equal(attempts.filter(r=>r.status==='rejected').length,1);
+  const { rows: [membership] } = await db.query('SELECT role FROM user_orgs WHERE org_id=$1 AND username=$2',[org.id,account.username]);
+  assert.equal(membership.role,'member');
+  const { rows: [identity] } = await db.query('SELECT external_id FROM integration_identities WHERE org_id=$1 AND username=$2',[org.id,account.username]);
+  assert.equal(identity.external_id,'UOTHER');
+  const { rows: [audit] } = await db.query("SELECT details->>'slackVerification' AS verification FROM audit_log WHERE org_id=$1 AND action='integration_onboarded'",[org.id]);
+  assert.equal(audit.verification,'slack_command');
+  const { rows: [profile] } = await db.query('SELECT email,github_username,github_username_pending FROM users WHERE username=$1',[account.username]);
+  assert.deepEqual(profile,{email:'roster@example.test',github_username:null,github_username_pending:'cross-github'});
+  assert.equal(messages.length,count+1);
+  await assert.rejects(()=>confirmSlackOnboarding(org.id,'UOTHER',third),/unavailable/);
+});
+
+
+test('cross-email browser flow keeps the SSO session and completes only after Slack confirmation', async () => {
+  const { rows: [org] } = await db.query<{ id: number }>("INSERT INTO orgs(slug,name) VALUES('browser-cross-email','Browser Cross Email') RETURNING id");
+  await db.query("INSERT INTO users(username,email,disabled) VALUES('browser-cross','different-roster@example.test',FALSE)");
+  await db.query("INSERT INTO org_integrations(org_id,service,enabled,config) VALUES($1,'slack',TRUE,$2)",[org.id,JSON.stringify({teamId:'TBROWSER',onboardingChannelId:'CBROWSER'})]);
+  passport.use('oidc',{authenticate(){this.success(user('browser-cross','different-roster@example.test'));}} as passport.Strategy);
+  const token = (await userRequestedOnboarding(org.id,'UOTHER')).match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
+  let cookie = '';
+  const request = async (path: string, init: RequestInit = {}) => {
+    const response = await fetch(origin+path,{...init,redirect:'manual',headers:{Cookie:cookie,...init.headers}});
+    const setCookie=response.headers.get('set-cookie'); if(setCookie) cookie=setCookie.split(';')[0];
+    return response;
+  };
+  await request(`/connect/slack/${token}`);
+  await request('/auth/callback');
+  const submit = () => request('/connect/slack',{method:'POST',headers:{Origin:origin,'Content-Type':'application/x-www-form-urlencoded'},body:'githubUsername=browser-github'});
+  const pending = await submit(); assert.equal(pending.status,200);
+  const body = await pending.text();
+  assert.match(body,/Confirm your Slack account/); assert.match(body,/other@example.test/);
+  assert.match(body,/name="githubUsername" value="browser-github"/);
+  assert.doesNotMatch(body,/Your account is connected/);
+  const code=body.match(/\/roster-connect ([A-F0-9]{16})/)![1];
+  const blocked=await request('/connect/slack',{method:'POST',headers:{Origin:'https://wrong.example','Content-Type':'application/x-www-form-urlencoded'},body:'githubUsername=browser-github'});
+  assert.equal(blocked.status,403);
+  await userRequestedOnboarding(org.id,'UOTHER',code);
+  const finished=await submit(); assert.equal(finished.status,200);
+  assert.match(await finished.text(),/Your account is connected/);
+  const again=await submit(); assert.equal(again.status,400);
+  const { rows: [linked] }=await db.query('SELECT external_id FROM integration_identities WHERE org_id=$1 AND username=$2',[org.id,'browser-cross']);
+  assert.equal(linked.external_id,'UOTHER');
 });

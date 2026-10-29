@@ -215,6 +215,10 @@ export async function runMigrations(): Promise<void> {
       delivery_status TEXT NOT NULL DEFAULT 'attempted',
       PRIMARY KEY (org_id, team_id, slack_user_id)
     )`);
+    await client.query(`ALTER TABLE slack_onboarding ADD COLUMN IF NOT EXISTS confirmation_username VARCHAR(100)`);
+    await client.query(`ALTER TABLE slack_onboarding ADD COLUMN IF NOT EXISTS confirmation_code_hash TEXT`);
+    await client.query(`ALTER TABLE slack_onboarding ADD COLUMN IF NOT EXISTS confirmation_expires_at TIMESTAMPTZ`);
+    await client.query(`ALTER TABLE slack_onboarding ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ`);
     await client.query(`CREATE TABLE IF NOT EXISTS slack_discovery (
       org_id INTEGER PRIMARY KEY REFERENCES orgs(id) ON DELETE CASCADE,
       next_scan_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

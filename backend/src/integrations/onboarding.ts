@@ -78,7 +78,8 @@ export async function runDueSlackOnboarding(): Promise<void> {
   }
 }
 
-export async function userRequestedOnboarding(orgId: number, slackUserId: string): Promise<string> {
+export async function userRequestedOnboarding(orgId: number, slackUserId: string, confirmationCode = ''): Promise<string> {
+  if (confirmationCode.trim()) return confirmSlackOnboarding(orgId, slackUserId, confirmationCode);
   const origin = rosterBaseUrl(); const connection = await connectionFor(orgId, 'slack');
   // The weekly-discovery opt-in controls unsolicited invitations, not personal requests.
   const email = await integrationAdapters().slack(connection).memberEmail(slackUserId);
@@ -87,7 +88,8 @@ export async function userRequestedOnboarding(orgId: number, slackUserId: string
   const { rowCount } = await db.query(`INSERT INTO slack_onboarding (org_id,team_id,slack_user_id,slack_email,token_hash,expires_at,delivery_status)
     VALUES ($1,$2,$3,$4,$5,NOW()+INTERVAL '7 days','user_requested')
     ON CONFLICT (org_id,team_id,slack_user_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,expires_at=EXCLUDED.expires_at,
-      slack_email=EXCLUDED.slack_email,delivery_status='user_requested'
+      slack_email=EXCLUDED.slack_email,delivery_status='user_requested',
+      confirmation_username=NULL,confirmation_code_hash=NULL,confirmation_expires_at=NULL,confirmed_at=NULL
     WHERE slack_onboarding.claimed_at IS NULL`, [orgId, connection.config.teamId, slackUserId, email, onboardingTokenHash(token)]);
   if (!rowCount) {
     // Explicit requests also surface a pending submission made before review notices existed.
@@ -100,6 +102,23 @@ export async function userRequestedOnboarding(orgId: number, slackUserId: string
     return 'Your Slack identity is already connected. Use /roster-check to see your account.';
   }
   return `Sign in to connect your roster account and submit your GitHub username: ${origin}/connect/slack/${token}`;
+}
+
+/** Called only with the workspace/user from Slack's authenticated command payload. */
+export async function confirmSlackOnboarding(orgId: number, slackUserId: string, code: string): Promise<string> {
+  const normalized = code.trim().toUpperCase();
+  if (!/^[A-F0-9]{16}$/.test(normalized)) throw new Error('Enter /roster-connect followed by the confirmation code shown in your browser.');
+  const connection = await connectionFor(orgId, 'slack');
+  if (!await integrationAdapters().slack(connection).memberEmail(slackUserId)) throw new Error('Your Slack account is unavailable.');
+  const { rows: [confirmed] } = await db.query<{ confirmation_username: string }>(`UPDATE slack_onboarding s
+    SET confirmed_at=COALESCE(confirmed_at,NOW()) FROM org_integrations i
+    WHERE s.org_id=$1 AND s.team_id=$2 AND s.slack_user_id=$3 AND s.confirmation_code_hash=$4
+      AND s.claimed_at IS NULL AND s.expires_at>NOW() AND s.confirmation_expires_at>NOW()
+      AND s.confirmation_username IS NOT NULL AND i.org_id=s.org_id AND i.service='slack'
+      AND i.enabled AND i.config->>'teamId'=s.team_id
+    RETURNING s.confirmation_username`, [orgId,connection.config.teamId,slackUserId,onboardingTokenHash(normalized)]);
+  if (!confirmed) throw new Error('This confirmation code is expired or unavailable for your Slack account. Return to the browser and try again.');
+  return `Slack ownership confirmed for roster account ${confirmed.confirmation_username}. Return to your browser and click Finish connection.`;
 }
 
 export async function onboardingDetails(hash: string) {
@@ -122,7 +141,18 @@ export async function completeSlackOnboarding(hash: string, user: AuthUser, gith
   const directory = existing[0] ? null : await getUser(user.username);
   const profile = existing[0] ?? directory;
   if (!profile || profile.disabled) throw new Error('An active directory account is required. Contact a project lead if you need an account.');
-  if (profile.email?.trim().toLowerCase() !== slackEmail.trim().toLowerCase()) throw new Error('Your roster and Slack email addresses differ. Ask an organization administrator to link your Slack identity.');
+  if (profile.email?.trim().toLowerCase() !== slackEmail.trim().toLowerCase()) {
+    const { rows: [proof] } = await db.query(`SELECT 1 FROM slack_onboarding WHERE token_hash=$1
+      AND confirmation_username=$2 AND confirmed_at IS NOT NULL AND confirmation_expires_at>NOW()`, [hash,user.username]);
+    if (!proof) {
+      const code = randomBytes(8).toString('hex').toUpperCase();
+      const { rowCount } = await db.query(`UPDATE slack_onboarding SET confirmation_username=$2,confirmation_code_hash=$3,
+        confirmation_expires_at=NOW()+INTERVAL '10 minutes',confirmed_at=NULL
+        WHERE token_hash=$1 AND claimed_at IS NULL AND expires_at>NOW()`, [hash,user.username,onboardingTokenHash(code)]);
+      if (!rowCount) throw new Error('This connection link was already used or expired.');
+      return { confirmationRequired: true as const, confirmationCode: code, slackEmail, organization: invitation.name };
+    }
+  }
   const client = await db.connect(); let joined = false; let pendingGithubUsername: string | null = null;
   try {
     await client.query('BEGIN');
@@ -130,11 +160,15 @@ export async function completeSlackOnboarding(hash: string, user: AuthUser, gith
       AND enabled AND config->>'teamId'=$2 FOR SHARE`, [invitation.org_id,invitation.team_id]);
     if (!enabled) throw new Error('This connection is no longer available.');
     // Single-use claim and identity uniqueness live in the same transaction as membership creation.
-    const { rows: [valid] } = await client.query(`SELECT 1 FROM slack_onboarding WHERE token_hash=$1 AND claimed_at IS NULL AND expires_at>NOW() FOR UPDATE`, [hash]);
+    const { rows: [valid] } = await client.query(`SELECT confirmation_username,confirmed_at,confirmation_expires_at>NOW() AS confirmation_valid FROM slack_onboarding WHERE token_hash=$1 AND claimed_at IS NULL AND expires_at>NOW() FOR UPDATE`, [hash]);
     if (!valid) throw new Error('This connection link was already used or expired.');
     if (directory) await upsertDirectoryUser(directory, client);
     const { rows: [account] } = await client.query<{ disabled: boolean; email: string }>('SELECT disabled,email FROM users WHERE username=$1 FOR UPDATE', [user.username]);
-    if (account.disabled || account.email?.trim().toLowerCase() !== slackEmail.trim().toLowerCase()) throw new Error('Your account changed. Contact an administrator.');
+    if (account.disabled) throw new Error('Your account changed. Contact an administrator.');
+    if (account.email?.trim().toLowerCase() !== slackEmail.trim().toLowerCase()
+      && !(valid.confirmation_username === user.username && valid.confirmed_at && valid.confirmation_valid)) {
+      throw new Error('Your Slack ownership confirmation is unavailable or expired. Submit the form again to get a new code.');
+    }
     joined = await ensureUserOrgMembership(user.username, invitation.org_id, client);
     const { rows: links } = await client.query<{ username: string; external_id: string }>(`SELECT username,external_id FROM integration_identities
       WHERE org_id=$1 AND service='slack' AND (username=$2 OR external_id=$3)`, [invitation.org_id,user.username,invitation.slack_user_id]);
@@ -148,7 +182,8 @@ export async function completeSlackOnboarding(hash: string, user: AuthUser, gith
     pendingGithubUsername = submission.github_username_pending;
     await client.query('UPDATE slack_onboarding SET claimed_by=$1,claimed_at=NOW() WHERE token_hash=$2', [user.username,hash]);
     await client.query(`INSERT INTO audit_log (org_id,actor,action,target_username,details) VALUES ($1,$2,'integration_onboarded',$2,$3)`,
-      [invitation.org_id,user.username,JSON.stringify({ joined, slackUserId: invitation.slack_user_id, githubUsername, githubStatus: 'submitted' })]);
+      [invitation.org_id,user.username,JSON.stringify({ joined, slackUserId: invitation.slack_user_id, githubUsername, githubStatus: 'submitted',
+        slackVerification: account.email?.trim().toLowerCase() === slackEmail.trim().toLowerCase() ? 'matching_email' : 'slack_command' })]);
     await client.query('COMMIT');
   } catch (error) { await client.query('ROLLBACK'); throw error; }
   finally { client.release(); }
@@ -157,7 +192,7 @@ export async function completeSlackOnboarding(hash: string, user: AuthUser, gith
   user.orgs = memberships.map(row => ({ orgId: row.org_id, orgSlug: row.org_slug, orgName: row.org_name, role: row.role as 'member' | 'project_lead' | 'org_admin' }));
   if (joined) await notifyOrganizationJoin(invitation.org_id, user.username, pendingGithubUsername ?? undefined);
   else if (pendingGithubUsername) await notifyGithubReview(invitation.org_id, user.username, pendingGithubUsername);
-  return { joined, organization: invitation.name, accountPath: `/orgs/${encodeURIComponent(invitation.slug)}/v2/account` };
+  return { confirmationRequired: false as const, joined, organization: invitation.name, accountPath: `/orgs/${encodeURIComponent(invitation.slug)}/v2/account` };
 }
 
 async function sendOrganizationNotice(orgId: number, username: string, message: (orgName: string) => string): Promise<void> {

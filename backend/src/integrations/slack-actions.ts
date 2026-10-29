@@ -24,7 +24,7 @@ async function identify(teamId: string, userId: string): Promise<{ orgId: number
   const email = await integrationAdapters().slack(connection).memberEmail(userId);
   const { rows: candidates } = await db.query<{ username: string }>(`SELECT u.username FROM users u
     JOIN user_orgs o ON o.username=u.username AND o.org_id=$1 WHERE LOWER(u.email)=$2 AND NOT u.disabled`, [connection.orgId, email]);
-  if (candidates.length !== 1) throw new Error('Your Slack account is not linked. Ask this organization’s roster administrator to link your Slack member ID.');
+  if (candidates.length !== 1) throw new Error('Your Slack account is not linked. Run /roster-connect to connect it using your roster sign-in.');
   await linkSlackIdentity(connection.orgId, candidates[0].username, userId, `slack:${userId}`);
   return { orgId: connection.orgId, username: candidates[0].username };
 }

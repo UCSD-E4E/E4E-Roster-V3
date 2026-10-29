@@ -36,6 +36,12 @@ export function slackConnectRouter(): Router {
     if (!req.session.slackOnboardingHash) { res.status(400).send('Open your personal connection link from Slack.'); return; }
     try {
       const result = await completeSlackOnboarding(req.session.slackOnboardingHash, req.user, String(req.body.githubUsername ?? '').trim());
+      if (result.confirmationRequired) {
+        res.type('html').send('<!doctype html>'+renderToStaticMarkup(<SlackConnectPage organization={result.organization}
+          username={req.user.username} githubUsername={String(req.body.githubUsername ?? '').trim()}
+          confirmationCode={result.confirmationCode} slackEmail={result.slackEmail} />));
+        return;
+      }
       delete req.session.slackOnboardingHash;
       // Persist the refreshed membership list through the existing Passport serializer.
       req.login(req.user, error => {
