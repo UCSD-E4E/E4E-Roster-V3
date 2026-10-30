@@ -40,7 +40,7 @@ export interface ProjectDetail extends ProjectSummary {
 
 export function requireProjectMembershipGroup(project: ProjectDetail, groups: string[]): void {
   if (!groups.some(group => project.membershipGroups.includes(group))) {
-    throw data('Choose at least one project group with a membership role.', { status: 400 });
+    throw data('Choose at least one project group marked Member.', { status: 400 });
   }
 }
 

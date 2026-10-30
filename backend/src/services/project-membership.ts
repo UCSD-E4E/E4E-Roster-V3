@@ -1,4 +1,4 @@
-/** Only a role mapping in the project's own organization can confer membership.
+/** Only an explicit Member group in the project's own organization confers membership.
  * Keep this relation shared by project access, rosters, counts and status checks.
  * Resource/utility groups remain in project_ldap_groups for provisioning.
  */
@@ -7,5 +7,5 @@ export const projectMembershipGroupsSql = `
   FROM project_ldap_groups g
   JOIN projects p ON p.id = g.project_id
   JOIN org_ldap_group_mappings m ON m.org_id = p.org_id AND m.ldap_group = g.ldap_group
-  WHERE m.role IN ('member', 'project_lead', 'org_admin')
+  WHERE m.role = 'member'
 `;
