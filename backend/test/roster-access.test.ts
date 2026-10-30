@@ -1435,10 +1435,10 @@ async function withMembershipRoleProject(run: (id: number, context: RosterUiCont
   }
 }
 
-test('project membership, counts and status require a membership role in the same organization', async () => {
+test('project membership, counts and status require an explicit Member group in the same organization', async () => {
   await withMembershipRoleProject(async (id, context) => {
-    for (const role of ['member', 'project_lead', 'org_admin']) {
-      await db.query("UPDATE org_ldap_group_mappings SET role=$1 WHERE org_id=$2 AND ldap_group='project-role'", [role, fixture.alphaId]);
+    for (const accountRole of ['member', 'project_lead', 'org_admin']) {
+      await db.query('UPDATE user_orgs SET role=$1 WHERE username=$2 AND org_id=$3', [accountRole, 'role-qualified', fixture.alphaId]);
       const project = await getProject(context, id);
       assert.ok(project);
       assert.deepEqual(project.members.map(p => p.username), ['role-qualified']);
@@ -1452,22 +1452,31 @@ test('project membership, counts and status require a membership role in the sam
     }
     assert.ok(!(await getPersonStatuses(fixture.alphaId, 'role-qualified')).get('role-qualified')!.details.some(d => d.message === 'No project assigned'));
     // Changing a group's role takes effect immediately, without rewriting project assignments.
-    await db.query("UPDATE org_ldap_group_mappings SET role='utility' WHERE org_id=$1 AND ldap_group='project-role'", [fixture.alphaId]);
-    assert.equal((await getProject(context, id))!.memberCount, 0);
+    for (const role of ['project_lead', 'org_admin', 'utility']) {
+      await db.query("UPDATE org_ldap_group_mappings SET role=$1 WHERE org_id=$2 AND ldap_group='project-role'", [role, fixture.alphaId]);
+      assert.equal((await getProject(context, id))!.memberCount, 0, role);
+      assert.equal((await listProjects(context)).find(p => p.id === id)?.memberCount, 0, role);
+      assert.ok((await getPersonStatuses(fixture.alphaId, 'role-qualified')).get('role-qualified')!.details.some(d => d.message === 'No project assigned'), role);
+    }
     await db.query("UPDATE org_ldap_group_mappings SET role='member' WHERE org_id=$1 AND ldap_group='project-utility'", [fixture.alphaId]);
     assert.deepEqual((await getProject(context, id))!.members.map(p => p.username), ['role-utility']);
   });
 });
 
-test('a utility group cannot grant a project lead project visibility or member management access', async () => {
+test('utility and lead groups cannot grant project access without a Member group', async () => {
   await withMembershipRoleProject(async id => {
-    const list = await request('/orgs/alpha/v2/projects', 'utility-project-lead');
-    assert.equal(list.status, 200);
-    assert.doesNotMatch(await list.text(), /Role scoped project/);
-    for (const suffix of ['', '/members/role-qualified/edit', '/members/role-qualified/audit', '/members/add', '/members/new']) {
-      const page = await request(`/orgs/alpha/v2/projects/${id}${suffix}`, 'utility-project-lead');
-      assert.equal(page.status, 404, suffix);
+    for (const role of ['utility', 'project_lead']) {
+      await db.query("UPDATE org_ldap_group_mappings SET role=$1 WHERE org_id=$2 AND ldap_group='project-utility'", [role, fixture.alphaId]);
+      const list = await request('/orgs/alpha/v2/projects', 'utility-project-lead');
+      assert.equal(list.status, 200);
+      assert.doesNotMatch(await list.text(), /Role scoped project/);
+      for (const suffix of ['', '/members/role-qualified/edit', '/members/role-qualified/audit', '/members/add', '/members/new']) {
+        const page = await request(`/orgs/alpha/v2/projects/${id}${suffix}`, 'utility-project-lead');
+        assert.equal(page.status, 404, `${role}: ${suffix}`);
+      }
     }
+    await db.query("UPDATE org_ldap_group_mappings SET role='member' WHERE org_id=$1 AND ldap_group='project-utility'", [fixture.alphaId]);
+    assert.equal((await request(`/orgs/alpha/v2/projects/${id}`, 'utility-project-lead')).status, 200);
   });
 });
 
@@ -1484,7 +1493,7 @@ test('project add and provisioning reject utility-only groups before any LDAP wr
       body: 'username=role-utility&groups=project-utility',
     });
     assert.equal(add.status, 400);
-    assert.match(await add.text(), /at least one project group with a membership role/);
+    assert.match(await add.text(), /at least one project group marked Member/);
     const create = await request(`${path}/new`, 'alpha-admin', {
       method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: 'firstName=Utility&lastName=Only&email=utility.only%40example.test&ldapGroups=project-utility',
