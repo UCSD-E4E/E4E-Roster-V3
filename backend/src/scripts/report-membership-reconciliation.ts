@@ -1,4 +1,5 @@
 import { db } from '../services/db';
+import { projectMembershipGroupsSql } from '../services/project-membership';
 
 // Read-only preflight for the staged membership cleanup.  This intentionally
 // does not decide whether a missing row should be backfilled: that policy
@@ -16,7 +17,7 @@ async function main(): Promise<void> {
              ARRAY_AGG(DISTINCT plg.ldap_group ORDER BY plg.ldap_group) AS matching_groups
       FROM projects p
       JOIN orgs o ON o.id = p.org_id
-      JOIN project_ldap_groups plg ON plg.project_id = p.id
+      JOIN (${projectMembershipGroupsSql}) plg ON plg.project_id = p.id
       JOIN users u ON plg.ldap_group = ANY(u.ldap_groups)
       LEFT JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = p.org_id
       WHERE uo.username IS NULL

@@ -1,6 +1,7 @@
 import { sortPeople } from './people-sort';
 import { getPersonStatuses, type PersonStatus } from './person-status.server';
 import { db } from '../services/db';
+import { projectMembershipGroupsSql } from '../services/project-membership';
 import * as ldap from '../services/ldap';
 import { AuthUser, OrgMembership } from '../types/user';
 import { data } from 'react-router';
@@ -33,7 +34,14 @@ export interface ProjectMember {
 }
 
 export interface ProjectDetail extends ProjectSummary {
+  membershipGroups: string[];
   members: ProjectMember[];
+}
+
+export function requireProjectMembershipGroup(project: ProjectDetail, groups: string[]): void {
+  if (!groups.some(group => project.membershipGroups.includes(group))) {
+    throw data('Choose at least one project group with a membership role.', { status: 400 });
+  }
 }
 
 export interface ProjectAuditEntry {
@@ -88,16 +96,21 @@ export async function listProjects(context: RosterUiContext): Promise<ProjectSum
     member_count: number;
     groups: string[];
   }>(`
+    WITH membership_groups AS (${projectMembershipGroupsSql})
     SELECT p.id, p.name, p.description,
            COUNT(DISTINCT uo.username)::int AS member_count,
            COALESCE(ARRAY_AGG(DISTINCT plg.ldap_group)
              FILTER (WHERE plg.ldap_group IS NOT NULL), '{}') AS groups
     FROM projects p
     LEFT JOIN project_ldap_groups plg ON plg.project_id = p.id
-    LEFT JOIN users u ON plg.ldap_group = ANY(u.ldap_groups)
+    LEFT JOIN membership_groups qualifying ON qualifying.project_id = p.id
+    LEFT JOIN users u ON qualifying.ldap_group = ANY(u.ldap_groups)
     LEFT JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = p.org_id
     WHERE p.org_id = $1
-      AND ($2::boolean OR plg.ldap_group = ANY($3::text[]))
+      AND ($2::boolean OR EXISTS (
+        SELECT 1 FROM membership_groups visible
+        WHERE visible.project_id = p.id AND visible.ldap_group = ANY($3::text[])
+      ))
     GROUP BY p.id
     ORDER BY p.name
   `, [context.org.id, admin, groups]);
@@ -128,7 +141,7 @@ export async function getProject(
   }>(`
     SELECT DISTINCT p.id, p.name, p.description
     FROM projects p
-    LEFT JOIN project_ldap_groups plg ON plg.project_id = p.id
+    LEFT JOIN (${projectMembershipGroupsSql}) plg ON plg.project_id = p.id
     WHERE p.id = $1 AND p.org_id = $2
       AND ($3::boolean OR plg.ldap_group = ANY($4::text[]))
   `, [projectId, context.org.id, admin, groups]);
@@ -137,8 +150,12 @@ export async function getProject(
   if (!project) return null;
 
   const [{ rows: groupRows }, { rows: memberRows }] = await Promise.all([
-    db.query<{ ldap_group: string }>(
-      'SELECT ldap_group FROM project_ldap_groups WHERE project_id = $1 ORDER BY ldap_group',
+    db.query<{ ldap_group: string; grants_membership: boolean }>(
+      `SELECT g.ldap_group, qualifying.ldap_group IS NOT NULL AS grants_membership
+       FROM project_ldap_groups g
+       LEFT JOIN (${projectMembershipGroupsSql}) qualifying
+         ON qualifying.project_id=g.project_id AND qualifying.ldap_group=g.ldap_group
+       WHERE g.project_id = $1 ORDER BY g.ldap_group`,
       [projectId],
     ),
     db.query<{
@@ -155,7 +172,7 @@ export async function getProject(
       FROM users u
       JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $2
       WHERE EXISTS (
-        SELECT 1 FROM project_ldap_groups plg
+        SELECT 1 FROM (${projectMembershipGroupsSql}) plg
         WHERE plg.project_id = $1 AND plg.ldap_group = ANY(u.ldap_groups)
       )
       ORDER BY u.last_name, u.first_name, u.username
@@ -179,6 +196,7 @@ export async function getProject(
     description: project.description,
     memberCount: memberRows.length,
     groups: groupRows.map((row) => row.ldap_group),
+    membershipGroups: groupRows.filter(row => row.grants_membership).map(row => row.ldap_group),
     members: sortPeople(members, sort, direction, {
       role: member => member.role ?? '',
       groups: member => member.groups.join('\u0000'),
@@ -275,7 +293,7 @@ export async function getProjectMemberEdit(
            ) AS is_org_admin
     FROM users u JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $3
     WHERE u.username = $1 AND EXISTS (
-      SELECT 1 FROM project_ldap_groups plg
+      SELECT 1 FROM (${projectMembershipGroupsSql}) plg
       WHERE plg.project_id = $2 AND plg.ldap_group = ANY(u.ldap_groups)
     )
   `, [username, projectId, context.org.id]);
