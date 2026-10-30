@@ -88,3 +88,12 @@ Use a distinct Slack app/workspace connection per roster organization. Socket Mo
 6. Optionally enable `INTEGRATION_AUTO_SYNC=true` after verifying mappings. Keeping it false disables scheduled grants only; manual apply and relevant user saves can still grant access.
 
 Keep database backups and the matching encryption key recoverable together. See the [full runbook](deployment.md) for acceptance tests, updates, and rollback.
+
+## 8. Prompt Authentik refresh after LDAP edits
+
+The shared LDAP client can notify a downstream sync worker after any successful
+directory write. The `krg-prod` infra configuration mounts a private signal queue
+and sets `LDAP_CHANGE_SIGNAL_PATH=/run/ldap-change/pending`. Leave this variable
+unset on installations without that worker. No extra API token or OpenBao secret
+is required. Use the infra runbook `docs/roster-authentik-sync.md` for deployment
+and validation. Existing sessions/tokens still use their normal renewal behavior.

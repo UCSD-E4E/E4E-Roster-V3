@@ -1,6 +1,7 @@
 import { Client, Attribute, Change } from 'ldapts';
 import crypto from 'crypto';
 import { NewUser, ProvisionResult, SystemStatus } from './types';
+import { notifyLdapChange } from './ldap-change';
 
 /**
  * Narrow test seam for routes that otherwise require a live directory. It is
@@ -50,13 +51,23 @@ function ldapClient(): Client {
 
 async function withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
   const client = ldapClient();
+  let changed = false;
+  // Track successful wire writes here rather than in individual pages/actions.
+  // A partially failed multi-write operation still needs downstream reconciliation.
+  const add = client.add.bind(client);
+  const modify = client.modify.bind(client);
+  const del = client.del.bind(client);
+  client.add = async (...args: Parameters<Client['add']>) => { await add(...args); changed = true; };
+  client.modify = async (...args: Parameters<Client['modify']>) => { await modify(...args); changed = true; };
+  client.del = async (...args: Parameters<Client['del']>) => { await del(...args); changed = true; };
   try {
     const t0 = Date.now();
     await client.bind(process.env.LDAP_BIND_DN!, process.env.LDAP_BIND_PASSWORD!);
     console.log(`[ldap] bind: ${Date.now() - t0}ms`);
     return await fn(client);
   } finally {
-    await client.unbind();
+    try { await client.unbind(); }
+    finally { if (changed) await notifyLdapChange(); }
   }
 }
 
