@@ -1,4 +1,5 @@
 import { db } from '../services/db';
+import { projectMembershipGroupsSql } from '../services/project-membership';
 
 export interface PersonStatus {
   kind: 'ready' | 'attention' | 'unverified' | 'blocked';
@@ -18,7 +19,7 @@ export async function getPersonStatuses(orgId?: number, username?: string): Prom
       SELECT u.username, u.disabled, u.expiry_date < CURRENT_DATE AS expired,
         TO_CHAR(u.expiry_date,'YYYY-MM-DD') AS expiry,
         EXISTS (SELECT 1 FROM user_orgs o JOIN projects p ON p.org_id=o.org_id
-          JOIN project_ldap_groups g ON g.project_id=p.id AND g.ldap_group=ANY(u.ldap_groups)
+          JOIN (${projectMembershipGroupsSql}) g ON g.project_id=p.id AND g.ldap_group=ANY(u.ldap_groups)
           WHERE o.username=u.username AND ($1::int IS NULL OR o.org_id=$1)) AS project_assigned
       FROM users u WHERE ($2::text IS NULL OR u.username=$2)
         AND ($1::int IS NULL OR $2::text IS NOT NULL OR EXISTS (SELECT 1 FROM user_orgs o WHERE o.username=u.username AND o.org_id=$1))`, args),

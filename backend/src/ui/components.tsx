@@ -212,7 +212,7 @@ export function ProjectPage(): React.JSX.Element {
             <p className="eyebrow">Roster</p>
             <h2>{project.memberCount} {project.memberCount === 1 ? 'member' : 'members'}</h2>
           </div>
-          <p>Only organization members matching this project’s groups appear here.</p>
+          <p>Only organization members matching a project group with a membership role appear here.</p>
         </div>
         {project.members.length === 0 ? (
           <div className="empty-state compact"><p>No roster members match this project yet.</p></div>

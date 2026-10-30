@@ -3,7 +3,7 @@ import { db } from '../services/db';
 import { ensureUserOrgMembership } from '../services/db';
 import * as ldap from '../services/ldap';
 import { triggerUserIntegrationSync } from '../services/integrations';
-import { getProject, getProjectMemberEdit, type RosterUiContext } from './projects.server';
+import { getProject, getProjectMemberEdit, requireProjectMembershipGroup, type RosterUiContext } from './projects.server';
 
 export interface ProjectMemberUpdate {
   groups: string[];
@@ -44,6 +44,7 @@ export async function addProjectMember(
   if (!selectedGroups.every((group) => project.groups.includes(group))) {
     throw data('Submitted groups do not belong to this project.', { status: 400 });
   }
+  requireProjectMembershipGroup(project, selectedGroups);
 
   const { rows } = await db.query<{ ldap_groups: string[] }>(
     'SELECT ldap_groups FROM users WHERE username = $1', [username],

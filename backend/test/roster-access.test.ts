@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import type { AddressInfo } from 'node:net';
 import { getPersonStatuses } from '../src/ui/person-status.server';
+import { getProject, listProjects, type RosterUiContext } from '../src/ui/projects.server';
 import * as ldap from '../src/services/ldap';
 import { createApp } from '../src/app';
 import { db, ensureUserOrgMembership, runMigrations } from '../src/services/db';
@@ -65,6 +66,10 @@ before(async () => {
   );
   await db.query(
     "INSERT INTO org_groups (org_id, ldap_group) VALUES ($1, 'alpha-team'), ($1, 'shared'), ($2, 'beta-team'), ($2, 'shared')",
+    [alpha.id, beta.id],
+  );
+  await db.query(
+    "INSERT INTO org_ldap_group_mappings (org_id,ldap_group,role) VALUES ($1,'alpha-team','member'),($1,'shared','member'),($2,'beta-team','member'),($2,'shared','member')",
     [alpha.id, beta.id],
   );
   const { rows: [alphaProject] } = await db.query<{ id: number }>(
@@ -927,7 +932,7 @@ test('React workspace mutations reject a cross-site origin before changing roste
   });
   assert.equal(response.status, 403);
   const { rows } = await db.query('SELECT role FROM org_ldap_group_mappings WHERE org_id = $1 AND ldap_group = $2', [fixture.alphaId, 'alpha-team']);
-  assert.equal(rows.length, 0);
+  assert.deepEqual(rows, [{ role: 'member' }]);
 });
 
 test('the React group-mapping settings page writes role and integration targets only for its organization', async () => {
@@ -946,7 +951,7 @@ test('the React group-mapping settings page writes role and integration targets 
   const { rows: targets } = await db.query<{ org_id: number; target_id: string }>('SELECT org_id, target_id FROM group_mappings WHERE org_id = $1 AND ldap_group = $2 AND target_id = $3', [fixture.alphaId, 'alpha-team', 'alpha-target']);
   assert.deepEqual(roles, [{ org_id: fixture.alphaId, role: 'project_lead' }]);
   assert.deepEqual(targets, [{ org_id: fixture.alphaId, target_id: 'alpha-target' }]);
-  await db.query('DELETE FROM org_ldap_group_mappings WHERE org_id = $1 AND ldap_group = $2', [fixture.alphaId, 'alpha-team']);
+  await db.query("UPDATE org_ldap_group_mappings SET role='member' WHERE org_id = $1 AND ldap_group = $2", [fixture.alphaId, 'alpha-team']);
   await db.query('DELETE FROM group_mappings WHERE org_id = $1 AND target_id = $2', [fixture.alphaId, 'alpha-target']);
 });
 
@@ -1397,4 +1402,103 @@ test('all people tables sort names by first name and project member headers togg
     await db.query("UPDATE users SET first_name='Alpha',last_name='Admin' WHERE username='alpha-admin'");
     await db.query("UPDATE users SET first_name='Alpha',last_name='Member' WHERE username='alpha-member'");
   }
+});
+
+async function withMembershipRoleProject(run: (id: number, context: RosterUiContext) => Promise<void>): Promise<void> {
+  const groups = ['project-role', 'project-utility', 'project-unmapped', 'project-foreign'];
+  const usernames = ['role-qualified', 'role-utility', 'role-unmapped', 'role-foreign'];
+  const { rows: [project] } = await db.query<{ id: number }>(
+    "INSERT INTO projects(name,org_id) VALUES('Role scoped project',$1) RETURNING id", [fixture.alphaId]);
+  const context: RosterUiContext = {
+    user: users.get('alpha-admin')!,
+    org: { id: fixture.alphaId, slug: 'alpha', name: 'Alpha', themeColor: null },
+    membership: users.get('alpha-admin')!.orgs[0], basePath: '/orgs/alpha/v2',
+  };
+  try {
+    await db.query('INSERT INTO org_groups(org_id,ldap_group) SELECT $1,unnest($2::text[])', [fixture.alphaId, groups]);
+    await db.query(`INSERT INTO org_ldap_group_mappings(org_id,ldap_group,role) VALUES
+      ($1,'project-role','member'),($1,'project-utility','utility'),($2,'project-foreign','member')`, [fixture.alphaId, fixture.betaId]);
+    await db.query('INSERT INTO project_ldap_groups(project_id,ldap_group) SELECT $1,unnest($2::text[])', [project.id, groups]);
+    for (let i = 0; i < usernames.length; i++) {
+      await db.query('INSERT INTO users(username,first_name,ldap_groups) VALUES($1,$1,$2)', [usernames[i], [groups[i]]]);
+      await ensureUserOrgMembership(usernames[i], fixture.alphaId);
+    }
+    users.set('utility-project-lead', { ...users.get('alpha-lead')!, username: 'role-utility', groups: ['project-utility'] });
+    await run(project.id, context);
+  } finally {
+    users.delete('utility-project-lead');
+    ldap.setLdapTestOverrides(undefined);
+    await db.query('DELETE FROM projects WHERE id=$1', [project.id]);
+    await db.query('DELETE FROM users WHERE username=ANY($1::text[])', [usernames]);
+    await db.query('DELETE FROM org_ldap_group_mappings WHERE ldap_group=ANY($1::text[])', [groups]);
+    await db.query('DELETE FROM org_groups WHERE ldap_group=ANY($1::text[])', [groups]);
+  }
+}
+
+test('project membership, counts and status require a membership role in the same organization', async () => {
+  await withMembershipRoleProject(async (id, context) => {
+    for (const role of ['member', 'project_lead', 'org_admin']) {
+      await db.query("UPDATE org_ldap_group_mappings SET role=$1 WHERE org_id=$2 AND ldap_group='project-role'", [role, fixture.alphaId]);
+      const project = await getProject(context, id);
+      assert.ok(project);
+      assert.deepEqual(project.members.map(p => p.username), ['role-qualified']);
+      assert.deepEqual(project.membershipGroups, ['project-role']);
+      assert.ok(project.groups.includes('project-utility')); // Still available for resource assignment.
+      assert.equal((await listProjects(context)).find(p => p.id === id)?.memberCount, 1);
+    }
+    for (const username of ['role-utility', 'role-unmapped', 'role-foreign']) {
+      const status = (await getPersonStatuses(fixture.alphaId, username)).get(username)!;
+      assert.ok(status.details.some(d => d.message === 'No project assigned'));
+    }
+    assert.ok(!(await getPersonStatuses(fixture.alphaId, 'role-qualified')).get('role-qualified')!.details.some(d => d.message === 'No project assigned'));
+    // Changing a group's role takes effect immediately, without rewriting project assignments.
+    await db.query("UPDATE org_ldap_group_mappings SET role='utility' WHERE org_id=$1 AND ldap_group='project-role'", [fixture.alphaId]);
+    assert.equal((await getProject(context, id))!.memberCount, 0);
+    await db.query("UPDATE org_ldap_group_mappings SET role='member' WHERE org_id=$1 AND ldap_group='project-utility'", [fixture.alphaId]);
+    assert.deepEqual((await getProject(context, id))!.members.map(p => p.username), ['role-utility']);
+  });
+});
+
+test('a utility group cannot grant a project lead project visibility or member management access', async () => {
+  await withMembershipRoleProject(async id => {
+    const list = await request('/orgs/alpha/v2/projects', 'utility-project-lead');
+    assert.equal(list.status, 200);
+    assert.doesNotMatch(await list.text(), /Role scoped project/);
+    for (const suffix of ['', '/members/role-qualified/edit', '/members/role-qualified/audit', '/members/add', '/members/new']) {
+      const page = await request(`/orgs/alpha/v2/projects/${id}${suffix}`, 'utility-project-lead');
+      assert.equal(page.status, 404, suffix);
+    }
+  });
+});
+
+test('project add and provisioning reject utility-only groups before any LDAP writes', async () => {
+  await withMembershipRoleProject(async (id, context) => {
+    const calls: string[] = [];
+    ldap.setLdapTestOverrides({
+      updateUserGroups: async () => { calls.push('groups'); return { status: 'success', message: 'updated' }; },
+      createUser: async () => { calls.push('create'); return { status: 'success', message: 'created' }; },
+    });
+    const path = `/orgs/alpha/v2/projects/${id}/members`;
+    const add = await request(`${path}/add`, 'alpha-admin', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'username=role-utility&groups=project-utility',
+    });
+    assert.equal(add.status, 400);
+    assert.match(await add.text(), /at least one project group with a membership role/);
+    const create = await request(`${path}/new`, 'alpha-admin', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'firstName=Utility&lastName=Only&email=utility.only%40example.test&ldapGroups=project-utility',
+    });
+    assert.equal(create.status, 400);
+    assert.deepEqual(calls, []);
+    const valid = await request(`${path}/add`, 'alpha-admin', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'username=role-utility&groups=project-role&groups=project-utility',
+    });
+    assert.equal(valid.status, 302);
+    assert.deepEqual(calls, ['groups']);
+    assert.ok((await getProject(context, id))!.members.some(p => p.username === 'role-utility'));
+    const { rows: [user] } = await db.query('SELECT ldap_groups FROM users WHERE username=$1', ['role-utility']);
+    assert.ok(user.ldap_groups.includes('project-utility'));
+  });
 });

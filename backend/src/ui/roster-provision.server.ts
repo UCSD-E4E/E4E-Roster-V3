@@ -4,7 +4,7 @@ import * as ldap from '../services/ldap';
 import { triggerUserIntegrationSync } from '../services/integrations';
 import type { NewUser } from '../services/types';
 import { requireOrgAdmin } from './access';
-import { getProject, type RosterUiContext } from './projects.server';
+import { getProject, requireProjectMembershipGroup, type RosterUiContext } from './projects.server';
 
 export interface RosterProvisionResult {
   username: string;
@@ -51,5 +51,6 @@ export async function provisionOrganizationPerson(context: RosterUiContext, fiel
 export async function provisionProjectPerson(context: RosterUiContext, projectId: number, fields: Record<string, string | string[]>): Promise<RosterProvisionResult> {
   const project = await getProject(context, projectId); if (!project) throw data('Project not found.', { status: 404 }); const { user, secondaryEmail, phone, githubUsername, slackUsername } = fieldsFromForm(fields, true);
   if (user.ldapGroups.length === 0 || !user.ldapGroups.every((group) => project.groups.includes(group))) throw data('Choose one or more groups belonging to this project.', { status: 400 });
+  requireProjectMembershipGroup(project, user.ldapGroups);
   return persistProvision(context, user, secondaryEmail, phone, githubUsername, slackUsername, 'pl_create_user', projectId);
 }
