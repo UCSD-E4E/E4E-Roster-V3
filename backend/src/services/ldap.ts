@@ -8,6 +8,7 @@ import { NewUser, ProvisionResult, SystemStatus } from './types';
  * integration suite needs to control.
  */
 export interface LdapTestOverrides {
+  getUser?: (username: string) => Promise<LdapUser | null>;
   listUsers?: () => Promise<LdapUser[]>;
   listGroups?: () => Promise<string[]>;
   createGroup?: (name: string) => Promise<ProvisionResult>;
@@ -164,6 +165,7 @@ export async function listUsers(): Promise<LdapUser[]> {
 }
 
 export async function getUser(username: string): Promise<LdapUser | null> {
+  if (testOverrides?.getUser) return testOverrides.getUser(username);
   return withClient(async (client) => {
     const { searchEntries } = await client.search(process.env.LDAP_USERS_DN!, {
       scope: 'sub',

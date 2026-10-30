@@ -2,7 +2,7 @@ import { data } from 'react-router';
 import { db } from '../services/db';
 import { upsertUserOrgMembership } from '../services/db';
 import * as ldap from '../services/ldap';
-import { triggerGithubInvite } from '../services/integrations';
+import { triggerUserIntegrationSync } from '../services/integrations';
 import { requireOrgAdmin } from './access';
 import type { RosterUiContext } from './projects.server';
 
@@ -82,11 +82,11 @@ export async function updateOrganizationPerson(
   const phone = fields.phone.trim() || null;
   await db.query(
     `UPDATE users SET first_name=$1, last_name=$2, email=$3, role=$4, expiry_date=$5, ldap_groups=$6,
-      github_username=$7, slack_username=$8, secondary_email=$9, phone=$10, updated_at=NOW() WHERE username=$11`,
+      github_username=$7::text, github_username_pending=CASE WHEN LOWER(github_username_pending)=LOWER($7::text) THEN NULL ELSE github_username_pending END, slack_username=$8, secondary_email=$9, phone=$10, updated_at=NOW() WHERE username=$11`,
     [firstName, lastName, email, fields.role || null, fields.expiryDate || null, mergedGroups,
       githubUsername, slackUsername, secondaryEmail, phone, username],
   );
-  if (githubUsername) triggerGithubInvite(githubUsername, context.org.id);
+  if (githubUsername) triggerUserIntegrationSync(username, context.org.id, context.user.username);
   await db.query(
     `INSERT INTO audit_log (actor, action, target_username, details, org_id) VALUES ($1, 'edit_user', $2, $3, $4)`,
     [context.user.username, username, JSON.stringify({ firstName, lastName, email, role: fields.role, expiryDate: fields.expiryDate || null, groups: mergedGroups, githubUsername, slackUsername }), context.org.id],

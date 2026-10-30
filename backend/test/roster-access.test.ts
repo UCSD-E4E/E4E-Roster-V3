@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import type { AddressInfo } from 'node:net';
+import { getPersonStatuses } from '../src/ui/person-status.server';
 import * as ldap from '../src/services/ldap';
 import { createApp } from '../src/app';
 import { db, ensureUserOrgMembership, runMigrations } from '../src/services/db';
@@ -857,7 +858,54 @@ test('the React settings workspace requires an organisation admin', async () => 
 
   const allowed = await request('/orgs/alpha/v2/settings', 'alpha-admin');
   assert.equal(allowed.status, 200);
-  assert.match(await allowed.text(), /Save GitHub settings/);
+  assert.match(await allowed.text(), /Organization groups/);
+});
+
+test('organization settings separates groups, credentials and debug tools into tabs', async () => {
+  const groups = await request('/orgs/alpha/v2/settings', 'alpha-admin');
+  const groupBody = await groups.text();
+  assert.match(groupBody, /Organization settings/);
+  assert.match(groupBody, /Member type/);
+  assert.match(groupBody, /Project assignments/);
+  assert.match(groupBody, /popover="auto"/);
+  assert.doesNotMatch(groupBody, /Save GitHub settings|Link Slack identity|beta-team/);
+  const integrations = await request('/orgs/alpha/v2/settings?tab=integrations', 'alpha-admin');
+  const integrationBody = await integrations.text();
+  assert.match(integrationBody, /Save GitHub settings/);
+  assert.match(integrationBody, /Save Slack settings/);
+  assert.doesNotMatch(integrationBody, /Link Slack identity|Recent integration activity/);
+  const debug = await request('/orgs/alpha/v2/settings?tab=debug', 'alpha-admin');
+  const debugBody = await debug.text();
+  assert.match(debugBody, /Connection checks/);
+  assert.match(debugBody, /Link Slack identity/);
+  assert.doesNotMatch(debugBody, /Save Slack settings|Recent integration activity|beta-member/);
+  for (const tab of ['groups', 'integrations', 'debug']) {
+    const denied = await request(`/orgs/alpha/v2/settings?tab=${tab}`, 'alpha-member');
+    assert.equal(denied.status, 403);
+  }
+});
+
+test('group project assignments replace only this organization assignments and reject foreign projects atomically', async () => {
+  const { rows: [extra] } = await db.query<{ id: number }>("INSERT INTO projects (name,org_id) VALUES ('Extra alpha',$1) RETURNING id", [fixture.alphaId]);
+  const path = '/orgs/alpha/v2/settings?tab=groups';
+  const save = (projects: number[], username = 'alpha-admin', group = 'shared') => request(path, username, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams([['intent','projects'],['ldapGroup',group],...projects.map(id => ['projectIds',String(id)])]).toString(),
+  });
+  const assignments = async () => (await db.query<{ project_id: number }>("SELECT project_id FROM project_ldap_groups WHERE ldap_group='shared' ORDER BY project_id")).rows.map(p => p.project_id);
+  try {
+    assert.equal((await save([fixture.alphaProjectId, extra.id])).status, 302);
+    assert.deepEqual(await assignments(), [fixture.alphaProjectId,fixture.betaProjectId,extra.id].sort((a,b) => a-b));
+    assert.equal((await save([fixture.betaProjectId])).status, 400);
+    assert.deepEqual(await assignments(), [fixture.alphaProjectId,fixture.betaProjectId,extra.id].sort((a,b) => a-b));
+    assert.equal((await save([extra.id], 'alpha-member')).status, 403);
+    assert.equal((await save([extra.id], 'alpha-admin', 'beta-team')).status, 400);
+    assert.equal((await save([])).status, 302);
+    assert.deepEqual(await assignments(), [fixture.betaProjectId]);
+  } finally {
+    await db.query("INSERT INTO project_ldap_groups (project_id,ldap_group) VALUES ($1,'shared') ON CONFLICT DO NOTHING", [fixture.alphaProjectId]);
+    await db.query('DELETE FROM projects WHERE id=$1', [extra.id]);
+  }
 });
 
 test('the React settings action writes only the active organisation integration', async () => {
@@ -949,6 +997,25 @@ test('the React account workspace renders and updates the signed-in local admin 
   assert.deepEqual(rows, [{ secondary_email: 'personal@example.test', phone: '+1 555 0100' }]);
 });
 
+test('regular members can render their account with and without an expiration date', async () => {
+  ldap.setLdapTestOverrides({ getUser: async () => null });
+  try {
+    for (const expiry of ['2027-01-25', null]) {
+      await db.query("UPDATE users SET expiry_date = $1 WHERE username = 'alpha-member'", [expiry]);
+      const response = await request('/orgs/alpha/v2/account', 'alpha-member');
+      assert.equal(response.status, 200);
+      const body = await response.text();
+      assert.match(body, /My account/);
+      assert.match(body, /Alpha Member/);
+      assert.match(body, /SSH public keys/);
+      assert.ok(body.includes(expiry ?? 'No expiry'));
+    }
+  } finally {
+    ldap.setLdapTestOverrides(undefined);
+    await db.query("UPDATE users SET expiry_date = NULL WHERE username = 'alpha-member'");
+  }
+});
+
 test('the React account workspace updates the signed-in directory user and writes their SSH keys', async () => {
   let received: { username: string; keys: string[] } | undefined;
   ldap.setLdapTestOverrides({ setSshKeys: async (username, keys) => {
@@ -1037,6 +1104,34 @@ test('the React project settings workspace is admin-only and rejects foreign gro
     body: 'intent=add-group&ldapGroup=beta-team',
   });
   assert.equal(forged.status, 400);
+  assert.match(await forged.text(), /role="alert">LDAP group does not belong to this organization/);
+});
+
+test('project settings can add and remove an existing organization utility group', async () => {
+  await db.query("INSERT INTO org_groups (org_id, ldap_group) VALUES ($1, 'E4E-NAS')", [fixture.alphaId]);
+  const path = `/orgs/alpha/v2/projects/${fixture.alphaProjectId}/settings`;
+  try {
+    const added = await request(path, 'alpha-admin', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'intent=add-group&ldapGroup=E4E-NAS',
+    });
+    assert.equal(added.status, 302, await added.text());
+    const { rows } = await db.query('SELECT ldap_group FROM project_ldap_groups WHERE project_id=$1 AND ldap_group=$2', [fixture.alphaProjectId, 'E4E-NAS']);
+    assert.deepEqual(rows, [{ ldap_group: 'E4E-NAS' }]);
+    const page = await request(path, 'alpha-admin');
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /name="ldapGroup" value="E4E-NAS"/);
+    const removed = await request(path, 'alpha-admin', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'intent=remove-group&ldapGroup=E4E-NAS',
+    });
+    assert.equal(removed.status, 302);
+    const remaining = await db.query('SELECT 1 FROM project_ldap_groups WHERE project_id=$1 AND ldap_group=$2', [fixture.alphaProjectId, 'E4E-NAS']);
+    assert.equal(remaining.rowCount, 0);
+  } finally {
+    await db.query("DELETE FROM project_ldap_groups WHERE project_id=$1 AND ldap_group='E4E-NAS'", [fixture.alphaProjectId]);
+    await db.query("DELETE FROM org_groups WHERE org_id=$1 AND ldap_group='E4E-NAS'", [fixture.alphaId]);
+  }
 });
 
 test('the React project creation action creates only within the active organisation', async () => {
@@ -1193,5 +1288,113 @@ test('the React project add action rejects a forged group before LDAP is called'
     assert.match(await response.text(), /Submitted groups do not belong to this project/);
   } finally {
     ldap.setLdapTestOverrides(undefined);
+  }
+});
+
+
+test('people status distinguishes required access, pending invitations, failures and expiration across every people view', async () => {
+  const who = 'alpha-member';
+  const lookup = async () => (await getPersonStatuses(fixture.alphaId, who)).get(who)!;
+  const record = async (service: string, externalId: string, outcome: string, action = 'integration_grant') => db.query(
+    'INSERT INTO audit_log(org_id,actor,action,target_username,details) VALUES($1,$2,$3,$4,$5)',
+    [fixture.alphaId,'status-test',action,who,JSON.stringify({ service,externalId,targetId:service === 'github' ? 'status-team' : 'CSTATUS',outcome })]);
+  ldap.setLdapTestOverrides({ getUser: async () => null });
+  try {
+    await db.query("UPDATE users SET expiry_date=NULL,disabled=FALSE,github_username=NULL,github_username_pending=NULL WHERE username=$1",[who]);
+    assert.equal((await lookup()).kind,'ready'); // No required integrations.
+    await db.query(`INSERT INTO org_integrations(org_id,service,enabled,config) VALUES ($1,'github',TRUE,'{}'),($1,'slack',TRUE,'{}')
+      ON CONFLICT(org_id,service) DO UPDATE SET enabled=TRUE,updated_at=NOW()`,[fixture.alphaId]);
+    await db.query(`INSERT INTO group_mappings(org_id,ldap_group,service,target_id,target_name) VALUES
+      ($1,'alpha-team','github','status-team','Status team'),($1,'alpha-team','slack','CSTATUS','Status channel')`,[fixture.alphaId]);
+    assert.equal((await lookup()).kind,'attention');
+    assert.ok((await lookup()).details.some(d => d.message === 'Account not linked'));
+    await db.query("UPDATE users SET github_username='status-github' WHERE username=$1",[who]);
+    await db.query("INSERT INTO integration_identities(org_id,username,service,external_id) VALUES($1,$2,'slack','USTATUS')",[fixture.alphaId,who]);
+    assert.equal((await lookup()).kind,'unverified');
+    await record('slack','USTATUS','invited');
+    await record('github','status-github','pending');
+    assert.equal((await lookup()).kind,'attention');
+    assert.ok((await lookup()).details.some(d => d.message === 'Invitation pending acceptance'));
+    await record('github','status-github','active');
+    assert.equal((await lookup()).kind,'ready');
+    assert.ok((await lookup()).details.filter(d => d.checkedAt).length === 2);
+    await db.query("INSERT INTO user_orgs(username,org_id) VALUES($1,$2)",[who,fixture.betaId]);
+    await db.query("INSERT INTO org_integrations(org_id,service,enabled,config) VALUES($1,'github',TRUE,'{}')",[fixture.betaId]);
+    await db.query("INSERT INTO group_mappings(org_id,ldap_group,service,target_id,target_name) VALUES($1,'shared','github','status-team','Other organization team')",[fixture.betaId]);
+    assert.equal((await getPersonStatuses(fixture.betaId,who)).get(who)!.kind,'unverified');
+    assert.equal((await getPersonStatuses(undefined,who)).get(who)!.kind,'unverified');
+    assert.equal((await lookup()).kind,'ready'); // The other organization is not shown in this workspace.
+    await db.query("DELETE FROM group_mappings WHERE org_id=$1 AND target_id='status-team'",[fixture.betaId]);
+    await db.query('DELETE FROM org_integrations WHERE org_id=$1',[fixture.betaId]);
+    await db.query('DELETE FROM user_orgs WHERE org_id=$1 AND username=$2',[fixture.betaId,who]);
+    for (const path of ['/orgs/alpha/v2/people',`/orgs/alpha/v2/projects/${fixture.alphaProjectId}`,'/system/v2/users','/orgs/alpha/v2/account']) {
+      const response = await request(path,path.startsWith('/system') ? 'local-admin' : path.endsWith('/account') ? who : 'alpha-admin');
+      assert.equal(response.status,200);
+      assert.match(await response.text(),/Ready: status details for alpha-member/);
+    }
+    const systemVisitor = users.get('local-admin')!;
+    systemVisitor.isLocalAdmin = false; systemVisitor.isSystemAdmin = true;
+    try {
+      const page = await request('/orgs/alpha/v2/account', 'local-admin');
+      assert.equal(page.status, 200); // System administrators can visit an org without a user_orgs row.
+      assert.match(await page.text(), /Ready: status details for local-admin/);
+    } finally { systemVisitor.isLocalAdmin = true; systemVisitor.isSystemAdmin = false; }
+    await db.query('UPDATE org_integrations SET updated_at=NOW() WHERE org_id=$1',[fixture.alphaId]);
+    assert.equal((await lookup()).kind,'unverified'); // A changed connection must be checked again.
+    await record('slack','USTATUS','already_member');
+    await record('github','status-github','active');
+    await record('github','status-github','', 'integration_grant_failed');
+    assert.equal((await lookup()).kind,'attention');
+    await db.query("UPDATE users SET github_username_pending='new-account' WHERE username=$1",[who]);
+    assert.ok((await lookup()).details.some(d => d.message.includes('pending review')));
+    await db.query("UPDATE users SET github_username_pending=NULL,github_username='replacement' WHERE username=$1",[who]);
+    assert.equal((await lookup()).kind,'unverified'); // Old identity receipts cannot certify the replacement.
+    await db.query("UPDATE users SET expiry_date=CURRENT_DATE WHERE username=$1",[who]);
+    assert.notEqual((await lookup()).label,'Expired');
+    await db.query("UPDATE users SET expiry_date=CURRENT_DATE-1 WHERE username=$1",[who]);
+    assert.equal((await lookup()).label,'Expired');
+    await db.query('UPDATE users SET disabled=TRUE WHERE username=$1',[who]);
+    assert.equal((await lookup()).label,'Disabled');
+    assert.ok((await lookup()).details.some(d => d.label === 'Expiration'));
+    const beta = (await getPersonStatuses(fixture.betaId)).get('beta-member')!;
+    assert.equal(beta.kind,'ready');
+    assert.ok(!beta.details.some(d => d.label.includes('Status team')));
+  } finally {
+    ldap.setLdapTestOverrides(undefined);
+    await db.query("DELETE FROM audit_log WHERE actor='status-test'");
+    await db.query("DELETE FROM group_mappings WHERE org_id=$1 AND target_id='status-team'",[fixture.betaId]);
+    await db.query('DELETE FROM org_integrations WHERE org_id=$1',[fixture.betaId]);
+    await db.query('DELETE FROM user_orgs WHERE org_id=$1 AND username=$2',[fixture.betaId,who]);
+    await db.query("DELETE FROM group_mappings WHERE org_id=$1 AND target_id=ANY($2::text[])",[fixture.alphaId,['status-team','CSTATUS']]);
+    await db.query('DELETE FROM integration_identities WHERE org_id=$1 AND username=$2',[fixture.alphaId,who]);
+    await db.query('DELETE FROM org_integrations WHERE org_id=$1',[fixture.alphaId]);
+    await db.query('UPDATE users SET expiry_date=NULL,disabled=FALSE,github_username=NULL,github_username_pending=NULL WHERE username=$1',[who]);
+  }
+});
+
+
+test('all people tables sort names by first name and project member headers toggle ordering', async () => {
+  await db.query("UPDATE users SET first_name='Zoe',last_name='Aaron' WHERE username='alpha-admin'");
+  await db.query("UPDATE users SET first_name='Aaron',last_name='Zoe' WHERE username='alpha-member'");
+  try {
+    for (const path of ['/orgs/alpha/v2/people',`/orgs/alpha/v2/projects/${fixture.alphaProjectId}`,'/system/v2/users']) {
+      for (const direction of ['asc','desc']) {
+        const page = await request(`${path}?sort=name&dir=${direction}`,path.startsWith('/system') ? 'local-admin' : 'alpha-admin');
+        assert.equal(page.status,200);
+        const body = await page.text();
+        const first = body.indexOf('Aaron Zoe'); const last = body.indexOf('Zoe Aaron');
+        assert.ok(first >= 0 && last >= 0);
+        assert.ok(direction === 'asc' ? first < last : last < first);
+        assert.ok(body.includes(`sort=name&amp;dir=${direction === 'asc' ? 'desc' : 'asc'}`));
+      }
+    }
+    const project = await request(`/orgs/alpha/v2/projects/${fixture.alphaProjectId}?sort=status`, 'alpha-lead');
+    const body = await project.text();
+    assert.equal(project.status,200);
+    for (const column of ['name','role','groups','status']) assert.ok(body.includes(`?sort=${column}&amp;dir=`));
+    assert.match(body, /aria-sort="ascending"/);
+  } finally {
+    await db.query("UPDATE users SET first_name='Alpha',last_name='Admin' WHERE username='alpha-admin'");
+    await db.query("UPDATE users SET first_name='Alpha',last_name='Member' WHERE username='alpha-member'");
   }
 });

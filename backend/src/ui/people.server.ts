@@ -1,3 +1,5 @@
+import { sortPeople } from './people-sort';
+import { getPersonStatuses, type PersonStatus } from './person-status.server';
 import { data } from 'react-router';
 import { db } from '../services/db';
 import * as ldap from '../services/ldap';
@@ -6,6 +8,7 @@ import { canViewPeople, requireOrgAdmin } from './access';
 import type { RosterUiContext } from './projects.server';
 
 export interface OrgPerson {
+  status: PersonStatus;
   username: string;
   firstName: string | null;
   lastName: string | null;
@@ -39,6 +42,7 @@ export interface OrgPersonEdit {
   disabled: boolean;
   ldapGroups: string[];
   githubUsername: string | null;
+  pendingGithubUsername: string | null;
   slackUsername: string | null;
   sshPublicKeys: string[];
 }
@@ -69,7 +73,9 @@ export async function listPeople(context: RosterUiContext, sort = 'name', direct
     ORDER BY u.last_name, u.first_name, u.username
   `, [context.org.id]);
 
+  const statuses = await getPersonStatuses(context.org.id);
   const people = rows.map((row) => ({
+    status: statuses.get(row.username)!,
     username: row.username,
     firstName: row.first_name,
     lastName: row.last_name,
@@ -80,20 +86,11 @@ export async function listPeople(context: RosterUiContext, sort = 'name', direct
     disabled: row.disabled,
     groups: row.org_groups,
   }));
-  const values: Record<string, (person: OrgPerson) => string> = {
-    name: (person) => `${person.lastName ?? ''}\u0000${person.firstName ?? ''}\u0000${person.username}`,
+  return sortPeople(people, sort, direction, {
     role: (person) => person.orgRole,
     groups: (person) => person.groups.join('\u0000'),
     expiry: (person) => person.expiryDate ?? '',
-    status: (person) => person.disabled ? 'disabled' : 'active',
-  };
-  const value = values[sort] ?? values.name;
-  const multiplier = direction === 'desc' ? -1 : 1;
-  return people.sort((left, right) => {
-    const leftValue = value(left); const rightValue = value(right);
-    if (!leftValue) return rightValue ? 1 : 0;
-    if (!rightValue) return -1;
-    return leftValue.localeCompare(rightValue) * multiplier;
+    status: (person) => String(person.status.rank),
   });
 }
 
@@ -129,11 +126,12 @@ export async function getOrgPersonEdit(
       disabled: boolean;
       ldap_groups: string[];
       github_username: string | null;
+      github_username_pending: string | null;
       slack_username: string | null;
     }>(`
       SELECT u.username, u.first_name, u.last_name, u.email, u.secondary_email, u.phone, u.role,
              TO_CHAR(u.expiry_date, 'YYYY-MM-DD') AS expiry_date, u.disabled, u.ldap_groups,
-             u.github_username, u.slack_username
+             u.github_username, u.github_username_pending, u.slack_username
       FROM users u
       JOIN user_orgs uo ON uo.username = u.username AND uo.org_id = $2
       WHERE u.username = $1
@@ -156,6 +154,7 @@ export async function getOrgPersonEdit(
       disabled: row.disabled,
       ldapGroups: row.ldap_groups ?? [],
       githubUsername: row.github_username,
+      pendingGithubUsername: row.github_username_pending,
       slackUsername: row.slack_username,
       sshPublicKeys: ldapUser?.sshPublicKeys ?? [],
     },

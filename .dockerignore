@@ -1,0 +1,16 @@
+.git
+**/node_modules
+**/dist
+.env
+.env.*
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.sql
+**/*.log
+backend/certs
+backend/test
+github-app/private-keys

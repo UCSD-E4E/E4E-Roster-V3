@@ -1,8 +1,10 @@
 # Setup Guide
 
+For the integrated Slack/GitHub system and OpenBao-backed production deployment, use [deployment.md](deployment.md). The older development instructions below include historical configuration and are not the production runbook.
+
 ## Prerequisites
 
-- [Node.js 20+](https://nodejs.org/) (local dev)
+- [Node.js 24 LTS](https://nodejs.org/) (local dev; container images use 24.22.1)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (full stack)
 - An Authentik instance with an OIDC application configured — see [authentik.md](authentik.md)
 

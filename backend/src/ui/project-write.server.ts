@@ -2,7 +2,7 @@ import { data } from 'react-router';
 import { db } from '../services/db';
 import { ensureUserOrgMembership } from '../services/db';
 import * as ldap from '../services/ldap';
-import { triggerGithubInvite } from '../services/integrations';
+import { triggerUserIntegrationSync } from '../services/integrations';
 import { getProject, getProjectMemberEdit, type RosterUiContext } from './projects.server';
 
 export interface ProjectMemberUpdate {
@@ -102,7 +102,7 @@ export async function updateProjectMember(
        secondary_email=$4, phone=$5, disabled=$6, expiry_date=$7, updated_at=NOW() WHERE username=$8`,
     [mergedGroups, githubUsername, slackUsername, secondaryEmail, phone, fields.disabled === 'true', expiryDate, username],
   );
-  if (githubUsername) triggerGithubInvite(githubUsername, context.org.id);
+  if (githubUsername) triggerUserIntegrationSync(username, context.org.id, context.user.username);
   await db.query(
     `INSERT INTO audit_log (actor, action, target_username, details, org_id)
      VALUES ($1, 'pl_edit_user', $2, $3, $4)`,

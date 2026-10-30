@@ -1,3 +1,4 @@
+import { PersonStatus } from './person-status';
 import React from 'react';
 import {
   Link,
@@ -9,7 +10,6 @@ import {
 } from 'react-router';
 import type { ProjectDetail, ProjectMemberAudit, ProjectSummary, RosterUiContext } from './projects.server';
 import type { OrgPerson, OrgPersonEdit, PersonSearchResult } from './people.server';
-import type { IntegrationSettings } from './settings.server';
 import type { AccountProfile } from './account.server';
 import type { DashboardSummary } from './dashboard.server';
 import { canAdminOrg } from './access';
@@ -18,7 +18,7 @@ export interface ShellData {
   context: RosterUiContext;
 }
 
-function FormError(): React.JSX.Element | null {
+export function FormError(): React.JSX.Element | null {
   const actionData = useActionData() as { formError?: string } | undefined;
   return actionData?.formError ? <p className="form-error" role="alert">{actionData.formError}</p> : null;
 }
@@ -121,11 +121,11 @@ export function AccountPage(): React.JSX.Element {
       <section className="form-card account-summary"><h2>Identity</h2><dl className="account-details">
         <dt>Name</dt><dd>{name}</dd><dt>Username</dt><dd><code>{context.user.username}</code></dd>
         <dt>Institutional email</dt><dd>{profile.email || '—'}</dd><dt>Role</dt><dd>{profile.role || '—'}</dd>
-        <dt>Status</dt><dd><span className={`status ${profile.disabled ? 'disabled' : 'active'}`}>{profile.disabled ? 'Disabled' : 'Active'}</span></dd>
+        <dt>Status</dt><dd><PersonStatus status={profile.status} username={context.user.username} /></dd>
         <dt>Expiry</dt><dd>{profile.expiryDate || 'No expiry'}</dd>
       </dl></section>
       <section className="form-card account-summary"><h2>Integrations</h2><dl className="account-details">
-        <dt>GitHub</dt><dd>{profile.githubUsername || '—'}</dd><dt>Slack</dt><dd>{profile.slackUsername || '—'}</dd>
+        <dt>GitHub</dt><dd>{profile.githubUsername || '—'}{profile.pendingGithubUsername && <small>Submitted for review: {profile.pendingGithubUsername}</small>}</dd><dt>Slack</dt><dd>{profile.slackUsername || '—'}</dd>
       </dl><p className="form-copy">To update GitHub or Slack, contact your project lead or an administrator.</p></section>
       {profile.ldapGroups.length > 0 && <section className="form-card account-summary"><h2>Groups</h2><div className="tag-row">{profile.ldapGroups.map((group) => <span className="tag" key={group}>{group}</span>)}</div></section>}
     </div>
@@ -183,7 +183,7 @@ export function ProjectsPage(): React.JSX.Element {
 }
 
 export function ProjectPage(): React.JSX.Element {
-  const { project, context } = useLoaderData() as { project: ProjectDetail; context: RosterUiContext };
+  const { project, context, sort, direction } = useLoaderData() as { project: ProjectDetail; context: RosterUiContext; sort: string; direction: string };
   const isAdmin = canAdminOrg(context);
 
   return (
@@ -219,7 +219,7 @@ export function ProjectPage(): React.JSX.Element {
         ) : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Person</th><th>Role</th><th>Project groups</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
+              <thead><tr><SortableHeader label="Person" sort="name" currentSort={sort} direction={direction} /><SortableHeader label="Role" sort="role" currentSort={sort} direction={direction} /><SortableHeader label="Project groups" sort="groups" currentSort={sort} direction={direction} /><SortableHeader label="Status" sort="status" currentSort={sort} direction={direction} /><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {project.members.map((member) => {
                   const editUrl = isAdmin
@@ -230,7 +230,7 @@ export function ProjectPage(): React.JSX.Element {
                       <td><strong><a className="person-link" href={editUrl}>{[member.firstName, member.lastName].filter(Boolean).join(' ') || member.username}</a></strong><small>{member.username} · {member.email}</small></td>
                       <td>{member.role || '—'}</td>
                       <td><div className="tag-row">{member.groups.map((group) => <span className="tag small" key={group}>{group}</span>)}</div></td>
-                      <td><span className={member.disabled ? 'status disabled' : 'status active'}>{member.disabled ? 'Disabled' : 'Active'}</span></td>
+                      <td><PersonStatus status={member.status} username={member.username} /></td>
                       <td>
                         <div className="row-actions">
                           <a className="row-link" href={editUrl}>Manage</a>
@@ -285,6 +285,7 @@ export function ProjectSettingsPage(): React.JSX.Element {
     <>
       <Link to={`/projects/${project.id}`} className="back-link">← {project.name}</Link>
       <WorkspacePageHeader eyebrow="Project settings" title={project.name} description="Project groups control which organization members appear in this project roster." />
+      <FormError />
       <div className="settings-grid project-settings-grid">
         <section className="form-card">
           <h2>Project details</h2>
@@ -380,7 +381,7 @@ export function PeopleEditPage(): React.JSX.Element {
       <div className="form-section"><h2>Account</h2><div className="form-two-column"><label>Role<select name="role" defaultValue={person.role ?? ''}><option value="">Unset</option><option value="student">Student</option><option value="researcher">Researcher</option><option value="staff">Staff</option><option value="alumni">Alumni</option></select></label><label>Expiry date <span className="form-optional">optional</span><input name="expiryDate" type="date" defaultValue={person.expiryDate ?? ''} /></label></div></div>
       <div className="form-section"><h2>Organization groups</h2><p className="form-copy">Groups outside this organization are preserved and cannot be changed here.</p>{groups.length ? <div className="check-grid form-check-grid">{groups.map((group) => <label key={group}><input type="checkbox" name="groups" value={group} defaultChecked={person.ldapGroups.includes(group)} /> {group}</label>)}</div> : <p className="empty-inline">No organization LDAP groups are configured.</p>}</div>
       <label>SSH public keys <span className="form-optional">one per line; replaces existing keys</span><textarea name="sshKeys" rows={4} autoComplete="off" defaultValue={person.sshPublicKeys.join('\n')} placeholder="ssh-ed25519 AAAA..." /></label>
-      <div className="form-section"><h2>Integrations <span className="form-optional">optional</span></h2><div className="form-two-column"><label>GitHub username<input name="githubUsername" defaultValue={person.githubUsername ?? ''} autoComplete="off" /></label><label>Slack username<input name="slackUsername" defaultValue={person.slackUsername ?? ''} autoComplete="off" /></label></div></div>
+      <div className="form-section"><h2>Integrations <span className="form-optional">optional</span></h2><div className="form-two-column"><label>GitHub username<input name="githubUsername" defaultValue={person.pendingGithubUsername ?? person.githubUsername ?? ''} autoComplete="off" />{person.pendingGithubUsername && <span className="form-hint">Submitted by the member: {person.pendingGithubUsername}. Verify ownership, then save changes to approve this GitHub username for access grants.</span>}</label><label>Slack username<input name="slackUsername" defaultValue={person.slackUsername ?? ''} autoComplete="off" /></label></div></div>
       <div className="form-actions"><button className="button primary" type="submit">Save changes</button><Link className="button secondary" to="/people">Cancel</Link></div>
     </form></section>
   </>;
@@ -444,7 +445,7 @@ export function PeoplePage(): React.JSX.Element {
                   <td>{person.orgRole.replace('_', ' ')}</td>
                   <td><div className="tag-row table-tags">{person.groups.length ? person.groups.map((group) => <span className="tag small" key={group}>{group}</span>) : '—'}</div></td>
                   <td className="wide-column">{person.expiryDate ?? 'No expiry'}</td>
-                  <td><span className={person.disabled ? 'status disabled' : 'status active'}>{person.disabled ? 'Disabled' : 'Active'}</span></td>
+                  <td><PersonStatus status={person.status} username={person.username} /></td>
                   <td>{isAdmin && <Link className="row-link" to={`/people/${person.username}/edit`}>Manage</Link>}</td>
                 </tr>
               ))}</tbody>
@@ -454,32 +455,6 @@ export function PeoplePage(): React.JSX.Element {
       </section>
     </>
   );
-}
-
-export function SettingsPage(): React.JSX.Element {
-  const { settings } = useLoaderData() as { settings: IntegrationSettings; context: RosterUiContext };
-
-  return (
-    <>
-      <WorkspacePageHeader
-        eyebrow="Organization workspace"
-        title="Settings"
-        description="Integration configuration belongs to this organization and is available only to organization administrators. Secrets are write-only."
-      />
-      <p className="form-copy"><Link className="row-link" to="/settings/groups">Manage group roles and integration mappings</Link></p>
-      <FormError />
-      <section className="settings-grid" aria-label="Integration settings">
-        <section className="form-card"><form className="workspace-form" method="post"><input type="hidden" name="intent" value="github" /><p className="eyebrow">Integration</p><h2>GitHub</h2><label><span><input type="checkbox" name="enabled" value="true" defaultChecked={settings.github.enabled} /> Enable GitHub integration</span></label><label>App ID<input name="appId" defaultValue={settings.github.appId} /></label><label>Installation ID<input name="installationId" defaultValue={settings.github.installationId} /></label><label>Organization<input name="org" defaultValue={settings.github.org} /></label><label>Private key <span className="form-optional">{settings.github.hasPrivateKey ? 'configured; leave blank to retain' : 'optional until enabled'}</span><textarea name="privateKey" rows={4} autoComplete="off" /></label><button className="button primary" type="submit">Save GitHub settings</button></form></section>
-        <section className="form-card"><form className="workspace-form" method="post"><input type="hidden" name="intent" value="slack" /><p className="eyebrow">Integration</p><h2>Slack</h2><label><span><input type="checkbox" name="enabled" value="true" defaultChecked={settings.slack.enabled} /> Enable Slack integration</span></label><label>Workspace ID<input name="teamId" defaultValue={settings.slack.teamId} /></label><label>Bot token <span className="form-optional">{settings.slack.hasBotToken ? 'configured; leave blank to retain' : 'optional until enabled'}</span><input name="botToken" type="password" autoComplete="new-password" /></label><button className="button primary" type="submit">Save Slack settings</button></form></section>
-      </section>
-    </>
-  );
-}
-
-export function GroupMappingsPage(): React.JSX.Element {
-  const { mappings } = useLoaderData() as { mappings: import('./settings.server').OrgGroupMappingSettings; context: RosterUiContext };
-  const selected = mappings.selectedGroup;
-  return <><Link to="/settings" className="back-link">← Settings</Link><WorkspacePageHeader eyebrow="Organization workspace" title="Group mappings" description="Set organization roles and map roster groups to GitHub teams or Slack channels." /><FormError /><div className="settings-grid"><section className="content-card"><form className="person-search" method="get"><label htmlFor="mapping-group">Choose a group</label><div><select id="mapping-group" name="group" defaultValue={selected ?? ''}><option value="">Select a group</option>{mappings.groups.map((group) => <option key={group} value={group}>{group}</option>)}</select><button className="button secondary" type="submit">Open</button></div></form></section><section className="form-card"><form className="workspace-form" method="post"><input type="hidden" name="intent" value="create" /><h2>Create organization group</h2><label>Group name<input name="groupName" required /></label><label>Project <span className="form-optional">optional</span><select name="projectId" defaultValue=""><option value="">Organization-only group</option>{mappings.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><button className="button secondary" type="submit">Create group</button></form></section></div>{selected ? <div className="settings-grid"><section className="form-card"><form className="workspace-form" method="post"><input type="hidden" name="intent" value="role" /><input type="hidden" name="ldapGroup" value={selected} /><h2>{selected} role</h2><p className="form-copy">Assigning a role grants it to matching directory users after membership sync.</p><label>Organization role<select name="role" defaultValue={mappings.role ?? ''}><option value="">No role</option><option value="member">Member</option><option value="project_lead">Project lead</option><option value="org_admin">Organization admin</option><option value="utility">Utility (no membership)</option></select></label><button className="button primary" type="submit">Save role</button></form></section><section className="form-card"><form className="workspace-form" method="post"><input type="hidden" name="intent" value="add" /><input type="hidden" name="ldapGroup" value={selected} /><h2>Add integration mapping</h2><label>Service<select name="service" defaultValue="github"><option value="github">GitHub team</option><option value="slack">Slack channel</option></select></label><label>Target ID<input name="targetId" required placeholder="team slug or channel ID" /></label><label>Target name<input name="targetName" required placeholder="Visible name" /></label><button className="button primary" type="submit">Add mapping</button></form></section></div> : null}{selected ? <section className="content-card"><div className="section-heading"><div><p className="eyebrow">Integration targets</p><h2>{mappings.mappings.length} {mappings.mappings.length === 1 ? 'mapping' : 'mappings'}</h2></div><form method="post"><input type="hidden" name="intent" value="sync" /><input type="hidden" name="ldapGroup" value={selected} /><button className="button secondary" type="submit">Sync integrations</button></form></div>{mappings.mappings.length === 0 ? <p className="empty-inline">No integration targets are mapped to this group.</p> : <div className="table-wrap"><table><thead><tr><th>Service</th><th>Target</th><th></th></tr></thead><tbody>{mappings.mappings.map((mapping) => <tr key={mapping.id}><td>{mapping.service}</td><td><code>{mapping.targetId}</code> {mapping.targetName}</td><td><form method="post"><input type="hidden" name="intent" value="delete" /><input type="hidden" name="ldapGroup" value={selected} /><input type="hidden" name="id" value={mapping.id} /><button className="danger-link" type="submit">Remove</button></form></td></tr>)}</tbody></table></div>}</section> : <section className="empty-state compact"><p>Select an organization group to manage its role and integration targets.</p></section>}</>;
 }
 
 export function PeopleAddPage(): React.JSX.Element {

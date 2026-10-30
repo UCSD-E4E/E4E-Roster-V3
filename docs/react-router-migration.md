@@ -19,9 +19,9 @@ not need a second JSON API. Client-side hydration can be introduced later for
 a specific interaction only when its value justifies the extra bundle and
 state-management surface.
 
-React Router 7 is pinned because it supports the production image's Node 20
-runtime. A move to Framework Mode and its Vite plugin can be reconsidered after
-the production runtime and deployment path are intentionally upgraded.
+React Router 7 remains pinned. The production runtime is Node 24 LTS; the
+runtime upgrade does not change the server-rendered architecture. A move to
+Framework Mode and its Vite plugin remains separate work.
 
 ## Boundaries
 

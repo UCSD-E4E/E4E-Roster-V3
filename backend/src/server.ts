@@ -5,6 +5,7 @@ import { setupPassport, setupPassportSession } from './auth';
 import { createApp } from './app';
 import { db, runMigrations } from './services/db';
 import { startSyncSchedule } from './services/sync';
+import { startIntegrationRuntime } from './integrations/runtime';
 
 // Creates or updates the break-glass local admin from env vars on every startup.
 // Remove BOOTSTRAP_ADMIN_USERNAME / BOOTSTRAP_ADMIN_PASSWORD from the environment
@@ -38,12 +39,15 @@ async function bootstrap(): Promise<void> {
   if (!SESSION_SECRET) {
     throw new Error('SESSION_SECRET env var is required');
   }
+  if (SKIP_OIDC === 'true' && process.env.NODE_ENV === 'production') {
+    throw new Error('SKIP_OIDC is not allowed in production.');
+  }
 
   // The break-glass local-login route still needs Passport session support
   // when OIDC discovery is skipped for a disposable local environment.
   setupPassportSession();
 
-  // TEMPORARY: see DEBUG_CHANGES.md — skip OIDC discovery for local testing without Authentik
+  // Explicit local testing can run without Authentik; production cannot skip OIDC.
   if (SKIP_OIDC === 'true') {
     console.warn('[startup] SKIP_OIDC=true — OIDC auth disabled, localhost debug routes only');
   } else {
@@ -70,11 +74,15 @@ async function bootstrap(): Promise<void> {
   await runMigrations();
   await bootstrapLocalAdmin();
   startSyncSchedule();
+  const stopIntegrations = startIntegrationRuntime();
 
   const app = createApp();
-  app.listen(parseInt(PORT, 10), () => {
+  const server = app.listen(parseInt(PORT, 10), () => {
     // TODO: replace localhost with actual configured URL (e.g. from a BASE_URL env var)
     console.log(`E4E Roster running at http://localhost:${PORT}`);
+  });
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => {
+    void stopIntegrations().finally(() => server.close(() => process.exit(0)));
   });
 }
 

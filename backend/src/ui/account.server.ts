@@ -1,9 +1,11 @@
+import { getPersonStatuses, type PersonStatus } from './person-status.server';
 import { db } from '../services/db';
 import * as ldap from '../services/ldap';
 import { data } from 'react-router';
 import type { RosterUiContext } from './projects.server';
 
 export interface AccountProfile {
+  status: PersonStatus;
   firstName: string | null;
   lastName: string | null;
   email: string | null;
@@ -13,6 +15,7 @@ export interface AccountProfile {
   expiryDate: string | null;
   disabled: boolean;
   githubUsername: string | null;
+  pendingGithubUsername: string | null;
   slackUsername: string | null;
   ldapGroups: string[];
   sshPublicKeys: string[];
@@ -23,20 +26,23 @@ export async function getAccountProfile(context: RosterUiContext): Promise<Accou
     db.query<{
       first_name: string | null; last_name: string | null; email: string | null;
       secondary_email: string | null; phone: string | null; role: string | null;
-      expiry_date: string | null; disabled: boolean; github_username: string | null;
+      expiry_date: string | null; disabled: boolean; github_username: string | null; github_username_pending: string | null;
       slack_username: string | null; ldap_groups: string[];
     }>(`SELECT first_name, last_name, email, secondary_email, phone, role,
-               expiry_date, disabled, github_username, slack_username, ldap_groups
+               TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
+               disabled, github_username, github_username_pending, slack_username, ldap_groups
         FROM users WHERE username = $1`, [context.user.username]),
     context.user.isLocalAdmin ? Promise.resolve(null) : ldap.getUser(context.user.username).catch(() => null),
   ]);
   const profile = rows[0];
   if (!profile) return null;
+  const statuses = await getPersonStatuses(context.user.isLocalAdmin ? undefined : context.org.id, context.user.username);
   return {
+    status: statuses.get(context.user.username)!,
     firstName: profile.first_name, lastName: profile.last_name, email: profile.email,
     secondaryEmail: profile.secondary_email, phone: profile.phone, role: profile.role,
     expiryDate: profile.expiry_date, disabled: profile.disabled,
-    githubUsername: profile.github_username, slackUsername: profile.slack_username,
+    githubUsername: profile.github_username, pendingGithubUsername: profile.github_username_pending, slackUsername: profile.slack_username,
     ldapGroups: profile.ldap_groups ?? [], sshPublicKeys: ldapUser?.sshPublicKeys ?? [],
   };
 }

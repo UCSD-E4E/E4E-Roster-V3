@@ -1,3 +1,5 @@
+import { sortPeople } from './people-sort';
+import { getPersonStatuses, type PersonStatus } from './person-status.server';
 import { db } from '../services/db';
 import * as ldap from '../services/ldap';
 import { AuthUser, OrgMembership } from '../types/user';
@@ -20,6 +22,7 @@ export interface ProjectSummary {
 }
 
 export interface ProjectMember {
+  status: PersonStatus;
   username: string;
   firstName: string | null;
   lastName: string | null;
@@ -111,6 +114,8 @@ export async function listProjects(context: RosterUiContext): Promise<ProjectSum
 export async function getProject(
   context: RosterUiContext,
   projectId: number,
+  sort = 'name',
+  direction = 'asc',
 ): Promise<ProjectDetail | null> {
   requireProjectWorkspaceRole(context);
   const admin = canAdminOrg(context);
@@ -157,21 +162,28 @@ export async function getProject(
     `, [projectId, context.org.id]),
   ]);
 
+  const statuses = await getPersonStatuses(context.org.id);
+  const members: ProjectMember[] = memberRows.map((row) => ({
+    status: statuses.get(row.username)!,
+    username: row.username,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    email: row.email,
+    role: row.role,
+    disabled: row.disabled,
+    groups: row.ldap_groups.filter((group) => groupRows.some((mapped) => mapped.ldap_group === group)),
+  }));
   return {
     id: project.id,
     name: project.name,
     description: project.description,
     memberCount: memberRows.length,
     groups: groupRows.map((row) => row.ldap_group),
-    members: memberRows.map((row) => ({
-      username: row.username,
-      firstName: row.first_name,
-      lastName: row.last_name,
-      email: row.email,
-      role: row.role,
-      disabled: row.disabled,
-      groups: row.ldap_groups.filter((group) => groupRows.some((mapped) => mapped.ldap_group === group)),
-    })),
+    members: sortPeople(members, sort, direction, {
+      role: member => member.role ?? '',
+      groups: member => member.groups.join('\u0000'),
+      status: member => String(member.status.rank),
+    }),
   };
 }
 
@@ -304,7 +316,7 @@ export async function addProjectGroup(
   requireOrgAdmin(context);
   const { rowCount } = await db.query(
     `INSERT INTO project_ldap_groups (project_id, ldap_group)
-     SELECT $1, $2 FROM org_groups WHERE org_id = $3 AND ldap_group = $2
+     SELECT $1, ldap_group FROM org_groups WHERE org_id = $3 AND ldap_group = $2
      ON CONFLICT DO NOTHING`,
     [projectId, ldapGroup, context.org.id],
   );
