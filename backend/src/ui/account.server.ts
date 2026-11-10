@@ -15,8 +15,8 @@ export interface AccountProfile {
   expiryDate: string | null;
   disabled: boolean;
   githubUsername: string | null;
-  pendingGithubUsername: string | null;
   slackUsername: string | null;
+  slackConnected: boolean;
   ldapGroups: string[];
   sshPublicKeys: string[];
 }
@@ -26,12 +26,14 @@ export async function getAccountProfile(context: RosterUiContext): Promise<Accou
     db.query<{
       first_name: string | null; last_name: string | null; email: string | null;
       secondary_email: string | null; phone: string | null; role: string | null;
-      expiry_date: string | null; disabled: boolean; github_username: string | null; github_username_pending: string | null;
-      slack_username: string | null; ldap_groups: string[];
+      expiry_date: string | null; disabled: boolean; github_username: string | null;
+      slack_username: string | null; slack_identity: string | null; ldap_groups: string[];
     }>(`SELECT first_name, last_name, email, secondary_email, phone, role,
                TO_CHAR(expiry_date, 'YYYY-MM-DD') AS expiry_date,
-               disabled, github_username, github_username_pending, slack_username, ldap_groups
-        FROM users WHERE username = $1`, [context.user.username]),
+               disabled, github_username, slack_username, ldap_groups,
+               (SELECT external_id FROM integration_identities x WHERE x.username=users.username
+                 AND x.org_id=$2 AND x.service='slack') AS slack_identity
+        FROM users WHERE username = $1`, [context.user.username, context.org.id]),
     context.user.isLocalAdmin ? Promise.resolve(null) : ldap.getUser(context.user.username).catch(() => null),
   ]);
   const profile = rows[0];
@@ -42,7 +44,7 @@ export async function getAccountProfile(context: RosterUiContext): Promise<Accou
     firstName: profile.first_name, lastName: profile.last_name, email: profile.email,
     secondaryEmail: profile.secondary_email, phone: profile.phone, role: profile.role,
     expiryDate: profile.expiry_date, disabled: profile.disabled,
-    githubUsername: profile.github_username, pendingGithubUsername: profile.github_username_pending, slackUsername: profile.slack_username,
+    githubUsername: profile.github_username, slackUsername: profile.slack_username ?? profile.slack_identity, slackConnected: Boolean(profile.slack_identity),
     ldapGroups: profile.ldap_groups ?? [], sshPublicKeys: ldapUser?.sshPublicKeys ?? [],
   };
 }

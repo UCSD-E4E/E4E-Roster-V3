@@ -81,10 +81,10 @@ Use a distinct Slack app/workspace connection per roster organization. Socket Mo
 ## 7. Test, then enable onboarding
 
 1. With Slack enabled, have a test user run `/roster-connect`, sign in through SSO, and enter a GitHub username. This works with **Check Slack weekly** off. They must already have an active directory account. If their Slack and roster emails differ, the browser shows a ten-minute confirmation code: run `/roster-connect CODE` from that Slack account, then return to the browser and click **Finish connection**.
-2. Verify/save the GitHub username using the existing **Edit User** page. Self-submitted usernames remain pending until reviewed.
+2. GitHub usernames are accepted immediately when submitted. Confirm the saved username on **My Account**; no ownership approval is required. Mapped Slack/GitHub access is reconciled after linking, even when scheduled sync is off.
 3. In organization Settings → Groups, map a test group to Slack channel IDs and GitHub team slugs. Use **Sync integrations** to apply grants; inspect the preview under **Debug** first if needed. Accept any GitHub organization invitation before checking team access.
 4. Test `/roster-check` and `/roster-extend`. Expiration changes affect the shared directory account across organizations.
-5. Enable **Check Slack weekly** after the test succeeds. New organization members are added as regular members and generate one message in the configured bot channel, linking to **Edit User** for project/group assignment. Linking an existing organization member sends no join notification; a pending GitHub username sends one review notice linking to the same Edit User page. Already approved usernames stay quiet.
+5. Enable **Check Slack weekly** after the test succeeds. New organization members are added as regular members and generate one message in the configured bot channel, linking to **Edit User** for project/group assignment. Linking an existing organization member stays quiet; no GitHub review notices are sent.
 6. Optionally enable `INTEGRATION_AUTO_SYNC=true` after verifying mappings. Keeping it false disables scheduled grants only; manual apply and relevant user saves can still grant access.
 
 Keep database backups and the matching encryption key recoverable together. See the [full runbook](deployment.md) for acceptance tests, updates, and rollback.
@@ -97,3 +97,5 @@ and sets `LDAP_CHANGE_SIGNAL_PATH=/run/ldap-change/pending`. Leave this variable
 unset on installations without that worker. No extra API token or OpenBao secret
 is required. Use the infra runbook `docs/roster-authentik-sync.md` for deployment
 and validation. Existing sessions/tokens still use their normal renewal behavior.
+
+Existing valid GitHub submissions waiting for review are accepted on backend startup and reconciled sequentially. The latest pending submission replaces the previous saved username. Legacy review storage remains only for rollback/history; active pages and notifications do not use it.

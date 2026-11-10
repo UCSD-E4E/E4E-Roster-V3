@@ -24,11 +24,10 @@ export async function getPersonStatuses(orgId?: number, username?: string): Prom
       FROM users u WHERE ($2::text IS NULL OR u.username=$2)
         AND ($1::int IS NULL OR $2::text IS NOT NULL OR EXISTS (SELECT 1 FROM user_orgs o WHERE o.username=u.username AND o.org_id=$1))`, args),
     db.query<{ username: string; org_id: number; org_name: string; service: string; target_id: string; target_name: string;
-      external_id: string | null; pending: string | null; action: string | null; outcome: string | null; checked_at: string | null }>(`
+      external_id: string | null; action: string | null; outcome: string | null; checked_at: string | null }>(`
       SELECT DISTINCT ON (u.username,o.org_id,m.service,m.target_id)
         u.username,o.org_id,org.name AS org_name,m.service,m.target_id,m.target_name,
         CASE WHEN m.service='github' THEN u.github_username ELSE x.external_id END AS external_id,
-        CASE WHEN m.service='github' THEN u.github_username_pending END AS pending,
         a.action,a.details->>'outcome' AS outcome,a.created_at::text AS checked_at
       FROM users u JOIN user_orgs o ON o.username=u.username JOIN orgs org ON org.id=o.org_id
       JOIN group_mappings m ON m.org_id=o.org_id AND m.ldap_group=ANY(u.ldap_groups)
@@ -53,13 +52,12 @@ export async function getPersonStatuses(orgId?: number, username?: string): Prom
     const required = grants.filter(g => g.username === person.username);
     for (const grant of required) {
       let message: string;
-      if (grant.pending) { message = `GitHub username ${grant.pending} pending review`; attention = true; }
-      else if (!grant.external_id) { message = 'Account not linked'; attention = true; }
+      if (!grant.external_id) { message = 'Account not linked'; attention = true; }
       else if (grant.action === 'integration_grant_failed') { message = 'Last grant failed · review admin logs'; attention = true; }
       else if (grant.service === 'github' && grant.outcome === 'pending') { message = 'Invitation pending acceptance'; attention = true; }
       else if (grant.action === 'integration_grant' && (grant.service === 'github' ? grant.outcome === 'active' : ['invited','already_member'].includes(grant.outcome ?? ''))) message = 'Access confirmed at last sync';
       else { message = 'Access not verified · run integration sync'; unverified = true; }
-      details.push({ label: `${orgId === undefined ? `${grant.org_name} · ` : ''}${grant.service === 'github' ? 'GitHub' : 'Slack'} · ${grant.target_name}`, message, checkedAt: !grant.pending && grant.external_id ? grant.checked_at ?? undefined : undefined });
+      details.push({ label: `${orgId === undefined ? `${grant.org_name} · ` : ''}${grant.service === 'github' ? 'GitHub' : 'Slack'} · ${grant.target_name}`, message, checkedAt: grant.external_id ? grant.checked_at ?? undefined : undefined });
     }
     if (!required.length) details.push({ label: 'Integrations', message: 'No integration grants required by current groups and enabled providers' });
     if (!person.project_assigned) details.push({ label: 'Projects', message: 'No project assigned' });

@@ -203,8 +203,7 @@ export async function getIntegrationWorkbench(context: RosterUiContext) {
       LEFT JOIN integration_identities x ON x.org_id=o.org_id AND x.username=o.username AND x.service='slack'
       WHERE o.org_id=$1 ORDER BY o.username`, [context.org.id]),
     db.query<{ kind: string; identity: string; status: string }>(`SELECT 'Invitation' AS kind,slack_user_id AS identity,delivery_status AS status FROM slack_onboarding WHERE org_id=$1
-      UNION ALL SELECT 'Join notification',username,status FROM org_join_notifications WHERE org_id=$1
-      UNION ALL SELECT 'GitHub review',username || ' → ' || github_username,status FROM github_review_notifications WHERE org_id=$1`, [context.org.id]),
+      UNION ALL SELECT 'Join notification',username,status FROM org_join_notifications WHERE org_id=$1`, [context.org.id]),
   ]);
   return { plan, identities, deliveries };
 }

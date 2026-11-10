@@ -301,10 +301,10 @@ After validation, enable **Check Slack weekly** for that organization. The backe
 - They sign in using the existing SSO system, confirm their Slack link, and enter a GitHub username. They need an existing active directory account; this flow does not create AD accounts.
 - Matching Slack and roster email addresses use the existing direct linking flow. Different addresses require the browser-generated, ten-minute `/roster-connect CODE` confirmation from the exact Slack workspace/member before the signed-in browser can finish linking. Codes are stored hashed and bound to the invitation and roster username; replacing a link invalidates its outstanding confirmation. No new Slack scopes or app reinstall are needed.
 - A missing organization membership is created as `member`. Existing roles are preserved. Projects and groups are not assigned automatically.
-- A newly added organization membership produces one combined join and GitHub-review message in that organization's roster bot channel. It links directly to `/orgs/<slug>/v2/people/<username>/edit`, with the existing administrator permission checks. Leads coordinate assignment there with an organization administrator.
-- Linking an existing organization member stays quiet when the submitted GitHub username is already approved. A pending GitHub submission produces one review notice in that organization’s roster bot channel, linking to the same Edit User page. Joining a second organization produces one combined notification in the second organization, while reusing the same roster person.
-- GitHub usernames submitted by members remain pending metadata until an administrator verifies/saves them in Edit User. Submission alone grants no GitHub access.
-- Review notices are recorded once per organization, member, and case-insensitive submitted GitHub username. Existing pending submissions can request their notice by running `/roster-connect` again. No recurring reminders or automatic retries of individual messages. Settings → Debug shows delivery status. `/roster-connect` explicitly requests a replacement for an unclaimed expired/failed invitation and invalidates its old link.
+- A newly added organization membership produces one join message in the configured roster bot channel, linking directly to Edit User for project/group assignment. The message includes the submitted GitHub username without requesting approval.
+- Linking an existing organization member stays quiet. Joining a second organization notifies only that organization while reusing the same roster person.
+- GitHub usernames are self-reported and accepted immediately after authenticated linking. Existing syntax validation remains; no ownership approval is required. The existing reconciler applies mapped access across the user’s organizations even when scheduled sync is off. GitHub invitations may still need acceptance.
+- GitHub review notices are removed. Previously pending valid usernames are promoted on startup (replacing older saved usernames) and reconciled sequentially. Legacy review storage is retained for rollback/history. Invitation and join notifications remain one-time with no automatic delivery retry.
 
 `/roster-check` shows organization-scoped information. `/roster-extend` renews an expiring shared account through 90 days from the database's current date; it does not shorten a later date or accumulate time on repeated requests. Disabled accounts cannot self-extend; an enabled but expired account can renew. Never-expiring accounts remain unchanged.
 
@@ -344,7 +344,7 @@ Then use designated real test accounts:
 |---|---|
 | E4E credentials configured in KRG | Ownership verification fails |
 | Same LDAP group name in both organizations | Preview/execution contains only each organization's members and destinations |
-| Existing member links Slack | Identity links and role preserved; no join notice; one review notice if their GitHub username needs approval |
+| Existing member links Slack | Identity links and role preserved; GitHub username saved and synced immediately; no review notice |
 | New organization member onboards | Regular membership, no new resource groups, one correct-channel Edit User notification |
 | Refresh/replay completion or repeat scan | No second claim or notification |
 | Expired link, wrong account/email, disabled account | Rejected; explicit replacement or administrator help required |
@@ -357,7 +357,7 @@ Then use designated real test accounts:
 | Sign out and sign in after a role change | The new session reflects current membership and roles; existing session behavior is unchanged |
 | Restart host / OpenBao unavailable at boot | Secrets render correctly, or roster startup fails closed |
 
-Automatic group grants are controlled separately by `INTEGRATION_AUTO_SYNC=true` (30-minute interval). Keep it false until previews and live tests pass. **False is not a global dry-run switch:** manual Apply grants and saving a trusted GitHub username can still reconcile access.
+Automatic group grants are controlled separately by `INTEGRATION_AUTO_SYNC=true` (30-minute interval). Keep it false until previews and live tests pass. **False is not a global dry-run switch:** manual Apply grants and saving a GitHub username can still reconcile access.
 
 The application currently has no dedicated health/readiness endpoint. Check service state, startup logs, database health, real SSO login, and a provider command; a responding login page alone does not establish integration health.
 
@@ -407,6 +407,6 @@ Keep diagnostics free of tokens, PEM keys, runtime env-file contents, and full o
 
 ### People status indicators
 
-Organization People, project member lists, the system directory, and My Account share the same status breakdown. Green **Ready** means the account is active and all currently required integration grants have confirmed results, or no grants are required. Yellow **Needs attention** indicates a missing identity, pending GitHub review/invitation, or failed grant. Gray **Unverified** means required access lacks a confirmed result for the current identity, connection, and destination mapping. Red distinguishes **Expired** from **Disabled**; expiration uses the same database date boundary as integration sync.
+Organization People, project member lists, the system directory, and My Account share the same status breakdown. Green **Ready** means the account is active and all currently required integration grants have confirmed results, or no grants are required. Yellow **Needs attention** indicates a missing identity, pending GitHub invitation, or failed grant. Gray **Unverified** means required access lacks a confirmed result for the current identity, connection, and destination mapping. Red distinguishes **Expired** from **Disabled**; expiration uses the same database date boundary as integration sync.
 
 Click a status to inspect each destination and its last-check timestamp. Results describe the latest recorded sync, not live provider membership; run integration sync to refresh them. Changing a connection invalidates earlier results. Disabled providers and groups the person does not belong to do not count as requirements. Organization views show only that organization's requirements; the system directory aggregates them across organizations. An unassigned project is a separate hint, not an integration failure.
