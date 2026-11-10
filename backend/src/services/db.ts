@@ -8,7 +8,7 @@ export const db = new Pool({
   password: process.env.DB_PASSWORD,
 });
 
-export async function runMigrations(): Promise<void> {
+export async function runMigrations(): Promise<string[]> {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -233,16 +233,16 @@ export async function runMigrations(): Promise<void> {
       FOREIGN KEY (username, org_id) REFERENCES user_orgs(username, org_id) ON DELETE CASCADE,
       PRIMARY KEY (org_id, username)
     )`);
-    await client.query(`CREATE TABLE IF NOT EXISTS github_review_notifications (
-      org_id INTEGER NOT NULL,
-      username VARCHAR(100) NOT NULL,
-      github_username TEXT NOT NULL,
-      attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      status TEXT NOT NULL DEFAULT 'attempted',
-      FOREIGN KEY (username, org_id) REFERENCES user_orgs(username, org_id) ON DELETE CASCADE,
-      PRIMARY KEY (org_id, username, github_username)
-    )`);
+    // Keep legacy review storage for rollback/history, but accept valid existing
+    // submissions automatically. Return names for startup reconciliation.
+    const { rows: acceptedGithubUsers } = await client.query<{ username: string }>(`
+      UPDATE users SET github_username=github_username_pending,github_username_pending=NULL,updated_at=NOW()
+      WHERE github_username_pending IS NOT NULL AND LENGTH(github_username_pending) BETWEEN 1 AND 39
+        AND github_username_pending ~* '^[a-z0-9]+(-[a-z0-9]+)*$'
+      RETURNING username
+    `);
     await client.query('COMMIT');
+    return acceptedGithubUsers.map(user => user.username);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

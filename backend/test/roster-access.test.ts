@@ -1351,7 +1351,7 @@ test('people status distinguishes required access, pending invitations, failures
     await record('github','status-github','', 'integration_grant_failed');
     assert.equal((await lookup()).kind,'attention');
     await db.query("UPDATE users SET github_username_pending='new-account' WHERE username=$1",[who]);
-    assert.ok((await lookup()).details.some(d => d.message.includes('pending review')));
+    assert.ok(!(await lookup()).details.some(d => d.message.includes('pending review'))); // Legacy review metadata has no effect.
     await db.query("UPDATE users SET github_username_pending=NULL,github_username='replacement' WHERE username=$1",[who]);
     assert.equal((await lookup()).kind,'unverified'); // Old identity receipts cannot certify the replacement.
     await db.query("UPDATE users SET expiry_date=CURRENT_DATE WHERE username=$1",[who]);
@@ -1510,4 +1510,37 @@ test('project add and provisioning reject utility-only groups before any LDAP wr
     const { rows: [user] } = await db.query('SELECT ldap_groups FROM users WHERE username=$1', ['role-utility']);
     assert.ok(user.ldap_groups.includes('project-utility'));
   });
+});
+
+test('My Account shows accepted GitHub and linked Slack accounts without review messaging or cross-org Slack leakage', async () => {
+  const person = users.get('alpha-member')!;
+  const oldOrgs = person.orgs;
+  const { rows: [old] } = await db.query('SELECT github_username,slack_username FROM users WHERE username=$1', [person.username]);
+  ldap.setLdapTestOverrides({ getUser: async () => null });
+  try {
+    await db.query("UPDATE users SET github_username='accepted-member',slack_username=NULL WHERE username=$1", [person.username]);
+    await db.query("INSERT INTO integration_identities(org_id,username,service,external_id) VALUES($1,$2,'slack','UACCEPTED')", [fixture.alphaId,person.username]);
+    const account = await request('/orgs/alpha/v2/account', 'alpha-member');
+    assert.equal(account.status,200);
+    const body = await account.text();
+    assert.match(body,/You’re all set!/);
+    assert.match(body,/https:\/\/github.com\/accepted-member/);
+    assert.match(body,/Slack<\/dt><dd>Connected<\/dd>/);
+    assert.doesNotMatch(body,/Submitted for review|pending review/);
+    const edit = await request('/orgs/alpha/v2/people/alpha-member/edit', 'alpha-admin');
+    assert.doesNotMatch(await edit.text(),/Verify ownership|approve this GitHub|Submitted by the member/);
+    await ensureUserOrgMembership(person.username,fixture.betaId);
+    person.orgs = [...oldOrgs,{ orgId: fixture.betaId,orgSlug:'beta',orgName:'Beta',role:'member' }];
+    const beta = await request('/orgs/beta/v2/account', 'alpha-member');
+    assert.equal(beta.status,200);
+    const other = await beta.text();
+    assert.doesNotMatch(other,/You’re all set!|UACCEPTED/);
+    assert.match(other,/Slack<\/dt><dd>Not connected<\/dd>/);
+  } finally {
+    person.orgs = oldOrgs;
+    ldap.setLdapTestOverrides(undefined);
+    await db.query("DELETE FROM integration_identities WHERE org_id=$1 AND username=$2 AND service='slack'",[fixture.alphaId,person.username]);
+    await db.query('DELETE FROM user_orgs WHERE org_id=$1 AND username=$2',[fixture.betaId,person.username]);
+    await db.query('UPDATE users SET github_username=$1,slack_username=$2 WHERE username=$3',[old.github_username,old.slack_username,person.username]);
+  }
 });

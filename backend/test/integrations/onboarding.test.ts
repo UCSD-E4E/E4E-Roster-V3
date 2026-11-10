@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import { AddressInfo } from 'net';
 import { db, runMigrations } from '../../src/services/db';
-import { scanSlackOnboarding, completeSlackOnboarding, notifyOrganizationJoin, notifyGithubReview, onboardingTokenHash, onboardingDetails, userRequestedOnboarding, runDueSlackOnboarding, confirmSlackOnboarding } from '../../src/integrations/onboarding';
+import { scanSlackOnboarding, completeSlackOnboarding, notifyOrganizationJoin, onboardingTokenHash, onboardingDetails, userRequestedOnboarding, runDueSlackOnboarding, confirmSlackOnboarding } from '../../src/integrations/onboarding';
 import { setIntegrationAdapters } from '../../src/integrations/providers';
 import { setLdapTestOverrides } from '../../src/services/ldap';
 import { createApp } from '../../src/app';
@@ -15,6 +15,7 @@ let server: ReturnType<ReturnType<typeof createApp>['listen']>;
 let failMessages = false;
 const dms: Array<{ orgId: number; id: string; text: string }> = [];
 const messages: Array<{ orgId: number; channel: string; text: string }> = [];
+const grants: Array<{ orgId: number; service: string; target: string; identity: string }> = [];
 const members = [
   { id: 'UNEW', email: 'new@example.test' },
   { id: 'UEXISTING', email: 'existing@example.test' },
@@ -41,12 +42,12 @@ before(async () => {
     await db.query(`INSERT INTO org_integrations (org_id,service,enabled,config) VALUES ($1,'slack',TRUE,$2)`,
       [id,JSON.stringify({ teamId: team, onboardingEnabled: 'true', onboardingChannelId: channel })]);
   }
-  setIntegrationAdapters({ slack: connection => ({ verify: async () => {}, destinations: async () => [], grant: async () => { throw new Error('Onboarding must not grant resources'); },
+  setIntegrationAdapters({ slack: connection => ({ verify: async () => {}, destinations: async () => [], grant: async (target,identity) => { grants.push({ orgId: connection.orgId, service: 'slack', target, identity }); return 'invited'; },
     members: async () => members,
     memberEmail: async id => members.find(m => m.id === id)?.email ?? null,
     directMessage: async (id,text) => { dms.push({ orgId: connection.orgId,id,text }); },
     sendMessage: async (channel,text) => { if (failMessages) throw new Error('Unavailable'); messages.push({ orgId: connection.orgId,channel,text }); },
-  }), github: () => ({ verify: async () => {}, destinations: async () => [], grant: async () => { throw new Error('Onboarding must not grant resources'); } }) });
+  }), github: connection => ({ verify: async () => {}, destinations: async () => [], grant: async (target,identity) => { grants.push({ orgId: connection.orgId, service: 'github', target, identity }); return 'active'; } }) });
   setLdapTestOverrides({ getUser: async username => ({ username, firstName: 'New', lastName: 'Member', email: username === 'new' ? 'new@example.test' : 'other@example.test',
     disabled: false, groups: [], expiryDate: null, sshPublicKeys: [], dn: `CN=${username}` }) });
   setupPassportSession();
@@ -73,25 +74,26 @@ test('weekly scan invites only missing active people; repeated scans send no rem
   assert(dms.slice(count).every(m => m.orgId === beta));
 });
 
-test('new member gets regular membership, scoped Slack link, pending GitHub username and exactly one existing Edit User notification', async () => {
+test('new member gets regular membership, scoped Slack link, accepted GitHub username and exactly one existing Edit User notification', async () => {
   const account = user('new','new@example.test');
   const result = await completeSlackOnboarding(onboardingTokenHash(invitation(alpha)),account,'octocat');
   assert.equal(result.joined,true);
   const { rows: memberships } = await db.query('SELECT org_id,role FROM user_orgs WHERE username=$1',['new']);
   assert.deepEqual(memberships,[{ org_id: alpha,role: 'member' }]);
   const { rows: [profile] } = await db.query("SELECT github_username,github_username_pending,ldap_groups FROM users WHERE username='new'");
-  assert.deepEqual(profile,{ github_username: null,github_username_pending: 'octocat',ldap_groups: [] });
+  assert.deepEqual(profile,{ github_username: 'octocat',github_username_pending: null,ldap_groups: [] });
   assert.equal(messages.length,1); assert.equal(messages[0].channel,'CALPHA');
   assert(messages[0].text.includes('/orgs/alpha/v2/people/new/edit'));
-  assert(messages[0].text.includes('GitHub username submitted for review: octocat'));
+  assert(messages[0].text.includes('GitHub username: octocat'));
+  assert(!messages[0].text.includes('review'));
+  assert.equal(grants.length,0);
   assert.equal(account.orgs[0].orgId,alpha);
   await notifyOrganizationJoin(alpha,'new'); assert.equal(messages.length,1);
-  await notifyGithubReview(alpha,'new','OCTOCAT'); assert.equal(messages.length,1);
   await assert.rejects(() => completeSlackOnboarding(onboardingTokenHash(invitation(alpha)),account,'octocat'),/expired|used/);
   assert.equal(messages.length,1);
 });
 
-test('existing organization member reconnects quietly with an already approved GitHub username and keeps their role', async () => {
+test('existing organization member reconnects quietly with a saved GitHub username and keeps their role', async () => {
   await db.query("UPDATE users SET github_username='existing-github' WHERE username='existing'");
   await db.query("UPDATE org_integrations SET config=config-'onboardingEnabled' WHERE org_id=$1 AND service='slack'",[alpha]);
   const response = await userRequestedOnboarding(alpha,'UEXISTING');
@@ -164,7 +166,7 @@ test('browser invitation survives actual login/session regeneration; GET does no
   const blocked = await request('/connect/slack',{ method: 'POST',headers: { Origin: 'https://wrong.example','Content-Type': 'application/x-www-form-urlencoded' },body: 'githubUsername=octocat' });
   assert.equal(blocked.status,403);
   const completed = await request('/connect/slack',{ method: 'POST',headers: { Origin: origin,'Content-Type': 'application/x-www-form-urlencoded' },body: 'githubUsername=octocat' });
-  assert.equal(completed.status,200); assert.match(await completed.text(),/Your account is connected/);
+  assert.equal(completed.status,200); assert.match(await completed.text(),/You’re all set!/);
   assert.equal(messages.length,3);
 });
 
@@ -204,53 +206,30 @@ test('turning weekly discovery off preserves an issued invitation but rebinding 
   await assert.rejects(() => onboardingDetails(onboardingTokenHash(token)),/unavailable/);
 });
 
-test('an explicit reconnect surfaces a previously submitted GitHub account once in its own organization channel', async () => {
-  // This member claimed their link before GitHub review notices were available.
-  await db.query("UPDATE users SET github_username_pending='legacy-github' WHERE username='existing'");
+test('migration accepts existing pending usernames, including replacements, without review notifications', async () => {
+  await db.query("UPDATE users SET github_username='existing-github',github_username_pending='legacy-github' WHERE username='existing'");
   const count = messages.length;
-  await Promise.all([userRequestedOnboarding(alpha,'UEXISTING'),userRequestedOnboarding(alpha,'UEXISTING')]);
-  assert.equal(messages.length,count+1);
-  assert.equal(messages.at(-1)?.orgId,alpha);
-  assert.equal(messages.at(-1)?.channel,'CALPHA');
-  assert(messages.at(-1)?.text.includes('GitHub username submitted for review: legacy-github'));
-  assert(messages.at(-1)?.text.includes('/orgs/alpha/v2/people/existing/edit'));
+  const accepted = await runMigrations();
+  assert.ok(accepted.includes('existing'));
+  const { rows: [profile] } = await db.query("SELECT github_username,github_username_pending FROM users WHERE username='existing'");
+  assert.deepEqual(profile,{github_username:'legacy-github',github_username_pending:null});
+  assert.deepEqual(await runMigrations(),[]);
   await userRequestedOnboarding(alpha,'UEXISTING');
-  assert.equal(messages.length,count+1);
+  assert.equal(messages.length,count);
 });
 
-test('an existing member submitting a different GitHub account gets one review notice and no join notice', async () => {
+test('an existing member can replace their GitHub username immediately without approval or a join notice', async () => {
   await db.query("DELETE FROM slack_onboarding WHERE org_id=$1 AND slack_user_id='UEXISTING'",[alpha]);
   const response = await userRequestedOnboarding(alpha,'UEXISTING');
   const token = response.match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
   const count = messages.length;
   const result = await completeSlackOnboarding(onboardingTokenHash(token),user('existing','existing@example.test'),'new-github');
   assert.equal(result.joined,false);
-  assert.equal(messages.length,count+1);
-  assert.equal(messages.at(-1)?.channel,'CALPHA');
-  assert(messages.at(-1)?.text.includes('GitHub username submitted for review: new-github'));
-  assert(!messages.at(-1)?.text.includes('A new regular member joined'));
+  assert.equal(messages.length,count);
   const { rows: [profile] } = await db.query("SELECT github_username,github_username_pending FROM users WHERE username='existing'");
-  assert.deepEqual(profile,{ github_username: 'existing-github',github_username_pending: 'new-github' });
-  await Promise.all([notifyGithubReview(alpha,'existing','NEW-GITHUB'),notifyGithubReview(alpha,'existing','new-github')]);
-  assert.equal(messages.length,count+1);
+  assert.deepEqual(profile,{github_username:'new-github',github_username_pending:null});
+  assert.equal((await db.query("SELECT role FROM user_orgs WHERE org_id=$1 AND username='existing'",[alpha])).rows[0].role,'org_admin');
 });
-
-test('GitHub review delivery failures are recorded without retries and resolved submissions stay quiet', async () => {
-  await db.query("UPDATE users SET github_username_pending='failed-github' WHERE username='existing'");
-  const count = messages.length;
-  failMessages = true;
-  try { await notifyGithubReview(alpha,'existing','failed-github'); }
-  finally { failMessages = false; }
-  await notifyGithubReview(alpha,'existing','FAILED-GITHUB');
-  assert.equal(messages.length,count);
-  const { rows: [state] } = await db.query("SELECT status FROM github_review_notifications WHERE org_id=$1 AND username='existing' AND github_username='failed-github'",[alpha]);
-  assert.equal(state.status,'failed');
-  await db.query("UPDATE users SET github_username_pending=NULL WHERE username='existing'");
-  await notifyGithubReview(alpha,'existing','another-github');
-  await userRequestedOnboarding(alpha,'UEXISTING');
-  assert.equal(messages.length,count);
-});
-
 
 test('different emails require proof from the exact Slack account before membership or linking can change', async () => {
   const { rows: [org] } = await db.query<{ id: number }>("INSERT INTO orgs(slug,name) VALUES('different-email','Different Email') RETURNING id");
@@ -307,7 +286,7 @@ test('different emails require proof from the exact Slack account before members
   const { rows: [audit] } = await db.query("SELECT details->>'slackVerification' AS verification FROM audit_log WHERE org_id=$1 AND action='integration_onboarded'",[org.id]);
   assert.equal(audit.verification,'slack_command');
   const { rows: [profile] } = await db.query('SELECT email,github_username,github_username_pending FROM users WHERE username=$1',[account.username]);
-  assert.deepEqual(profile,{email:'roster@example.test',github_username:null,github_username_pending:'cross-github'});
+  assert.deepEqual(profile,{email:'roster@example.test',github_username:'cross-github',github_username_pending:null});
   assert.equal(messages.length,count+1);
   await assert.rejects(()=>confirmSlackOnboarding(org.id,'UOTHER',third),/unavailable/);
 });
@@ -332,14 +311,35 @@ test('cross-email browser flow keeps the SSO session and completes only after Sl
   const body = await pending.text();
   assert.match(body,/Confirm your Slack account/); assert.match(body,/other@example.test/);
   assert.match(body,/name="githubUsername" value="browser-github"/);
-  assert.doesNotMatch(body,/Your account is connected/);
+  assert.doesNotMatch(body,/You’re all set!/);
   const code=body.match(/\/roster-connect ([A-F0-9]{16})/)![1];
   const blocked=await request('/connect/slack',{method:'POST',headers:{Origin:'https://wrong.example','Content-Type':'application/x-www-form-urlencoded'},body:'githubUsername=browser-github'});
   assert.equal(blocked.status,403);
   await userRequestedOnboarding(org.id,'UOTHER',code);
   const finished=await submit(); assert.equal(finished.status,200);
-  assert.match(await finished.text(),/Your account is connected/);
+  assert.match(await finished.text(),/You’re all set!/);
   const again=await submit(); assert.equal(again.status,400);
   const { rows: [linked] }=await db.query('SELECT external_id FROM integration_identities WHERE org_id=$1 AND username=$2',[org.id,'browser-cross']);
   assert.equal(linked.external_id,'UOTHER');
+});
+
+
+test('accepted GitHub usernames immediately reconcile mapped access even when scheduled sync is off', async () => {
+  process.env.INTEGRATION_AUTO_SYNC = 'false';
+  const { rows: [org] } = await db.query("INSERT INTO orgs(slug,name) VALUES('auto-accept','Auto Accept') RETURNING id");
+  await db.query("INSERT INTO users(username,email,ldap_groups) VALUES('auto-accepted','other@example.test',ARRAY['mapped-group'])");
+  await db.query("INSERT INTO org_groups(org_id,ldap_group) VALUES($1,'mapped-group')",[org.id]);
+  await db.query(`INSERT INTO org_integrations(org_id,service,enabled,config) VALUES
+    ($1,'slack',TRUE,'{"teamId":"TAUTO","onboardingChannelId":"CAUTO"}'),($1,'github',TRUE,'{"org":"auto-accept-org"}')`,[org.id]);
+  await db.query(`INSERT INTO group_mappings(org_id,ldap_group,service,target_id,target_name) VALUES
+    ($1,'mapped-group','slack','CAUTOTEAM','Team'),($1,'mapped-group','github','auto-team','Team')`,[org.id]);
+  const token = (await userRequestedOnboarding(org.id,'UOTHER')).match(/\/connect\/slack\/([a-f0-9]{64})/)![1];
+  const before = grants.length;
+  await completeSlackOnboarding(onboardingTokenHash(token),user('auto-accepted','other@example.test'),'self-reported');
+  assert.deepEqual(grants.slice(before).sort((a,b)=>a.service.localeCompare(b.service)),[
+    {orgId:org.id,service:'github',target:'auto-team',identity:'self-reported'},
+    {orgId:org.id,service:'slack',target:'CAUTOTEAM',identity:'UOTHER'},
+  ]);
+  const audit = await db.query("SELECT details->>'githubStatus' AS status FROM audit_log WHERE org_id=$1 AND action='integration_onboarded'",[org.id]);
+  assert.equal(audit.rows[0].status,'accepted');
 });

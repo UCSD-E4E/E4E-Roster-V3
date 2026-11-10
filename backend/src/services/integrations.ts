@@ -77,7 +77,7 @@ export function triggerUserIntegrationSync(username: string, orgId: number | und
   void reconcileUserIdentity(username, orgId, context).catch(() => console.warn(`[${context}] Integration reconciliation failed; review organization integration settings.`));
 }
 
-async function reconcileUserIdentity(username: string, orgId: number | undefined, actor: string): Promise<void> {
+export async function reconcileUserIdentity(username: string, orgId: number | undefined, actor: string): Promise<void> {
   const { rows } = await db.query<{ username: string; org_id: number }>(
     `SELECT u.username, o.org_id FROM users u JOIN user_orgs o ON o.username=u.username
      WHERE u.username=$1 AND ($2::integer IS NULL OR o.org_id=$2)`, [username, orgId ?? null]);

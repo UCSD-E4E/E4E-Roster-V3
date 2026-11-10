@@ -6,6 +6,7 @@ import { createApp } from './app';
 import { db, runMigrations } from './services/db';
 import { startSyncSchedule } from './services/sync';
 import { startIntegrationRuntime } from './integrations/runtime';
+import { reconcileUserIdentity } from './services/integrations';
 
 // Creates or updates the break-glass local admin from env vars on every startup.
 // Remove BOOTSTRAP_ADMIN_USERNAME / BOOTSTRAP_ADMIN_PASSWORD from the environment
@@ -71,7 +72,7 @@ async function bootstrap(): Promise<void> {
     setupPassport(client);
   }
 
-  await runMigrations();
+  const acceptedGithubUsers = await runMigrations();
   await bootstrapLocalAdmin();
   startSyncSchedule();
   const stopIntegrations = startIntegrationRuntime();
@@ -81,6 +82,13 @@ async function bootstrap(): Promise<void> {
     // TODO: replace localhost with actual configured URL (e.g. from a BASE_URL env var)
     console.log(`E4E Roster running at http://localhost:${PORT}`);
   });
+  // Reconcile previously pending names sequentially, even if periodic sync is off.
+  void (async () => {
+    for (const username of acceptedGithubUsers) {
+      try { await reconcileUserIdentity(username, undefined, 'github-auto-accept'); }
+      catch { console.warn('[github-auto-accept] Reconciliation failed; review integration status.'); }
+    }
+  })();
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => {
     void stopIntegrations().finally(() => server.close(() => process.exit(0)));
   });
