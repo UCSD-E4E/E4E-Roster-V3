@@ -2,6 +2,9 @@
 
 The roster uses Authentik as its OIDC provider. This page covers the one-time setup needed in your Authentik instance.
 
+For the independent `collab-admins` role, `/collab-manage`, and its separate
+management API token, see [collaborator management](collaborator-management.md).
+
 ## 1. Create an OAuth2/OIDC Application
 
 In the Authentik admin UI:

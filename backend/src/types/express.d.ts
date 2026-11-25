@@ -2,6 +2,7 @@ import { AuthUser, OrgMembership } from './user';
 import { WizardState } from '../services/types';
 import type { SystemProvisionResult } from '../ui/system.server';
 import type { RosterProvisionResult } from '../ui/roster-provision.server';
+import type { CollaboratorInvite } from '../services/authentik';
 
 declare global {
   namespace Express {
@@ -17,6 +18,7 @@ declare global {
 
 declare module 'express-session' {
   interface SessionData {
+    collaboratorInvite?: CollaboratorInvite;
     slackOnboardingHash?: string;
     wizard?: WizardState;
     systemProvisionResult?: SystemProvisionResult;

@@ -22,7 +22,7 @@ export function SystemShell(): React.JSX.Element {
     <script src="/static/js/react-roster-theme.js" defer />
   </head><body><div className="workspace-shell system-shell"><header className="workspace-header">
     <Link to="/local-admins" className="brand-mark"><span><strong>Roster System</strong><small>Administration</small></span></Link>
-    <nav aria-label="System administration navigation"><Link to="/local-admins">Local admins</Link><Link to="/users">Users</Link><Link to="/groups/new">Groups</Link><Link to="/organizations">Organizations</Link><Link to="/audit">Audit log</Link></nav>
+    <nav aria-label="System administration navigation"><Link to="/local-admins">Local admins</Link><Link to="/users">Users</Link><Link to="/groups/new">Groups</Link><Link to="/organizations">Organizations</Link><Link to="/collab-admins">Collab admins</Link><Link to="/audit">Audit log</Link></nav>
     <div className="account-cluster"><span>{context.user.name || context.user.username}</span><button className="theme-toggle" id="theme-toggle" type="button">Light mode</button><a href="/orgs">My orgs</a></div>
   </header><main className="workspace-main"><Outlet /></main></div></body></html>;
 }

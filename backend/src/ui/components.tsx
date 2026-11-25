@@ -80,6 +80,7 @@ export function RosterShell(): React.JSX.Element {
               <Link to="/projects">Projects</Link>
               <Link to="/people">People</Link>
               {isAdmin && <Link to="/settings">Settings</Link>}
+              <a href="/collab-manage">Collaborator invites</a>
             </nav>
             <div className="account-cluster">
               <Link to="/account">{context.user.name || context.user.username}</Link>
