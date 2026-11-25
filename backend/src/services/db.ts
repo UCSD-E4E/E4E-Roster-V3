@@ -38,6 +38,18 @@ export async function runMigrations(): Promise<string[]> {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone            VARCHAR(50)`);
 
     // ── Audit log ────────────────────────────────────────────────────
+    // Independent of directory groups and organization roles. Only the system
+    // administration surface may write these grants; never accept OIDC claims.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS roster_role_grants (
+        username VARCHAR(100) NOT NULL,
+        role VARCHAR(50) NOT NULL CHECK (role = 'collab-admins'),
+        granted_by VARCHAR(100) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (username, role)
+      )
+    `);
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS audit_log (
         id              SERIAL PRIMARY KEY,

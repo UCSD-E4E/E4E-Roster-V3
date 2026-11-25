@@ -6,6 +6,9 @@ import { addSystemLdapMapping, createLocalAdmin, createSystemOrganization, delet
 import { requireSameOriginMutation, setReactWorkspaceHeaders } from './security';
 import { keepFormError } from './action-errors';
 import { formFields, sendFetchResponse, webRequest } from './http';
+import { SystemCollabAdminsPage } from './system-collab';
+import { db } from '../services/db';
+import { setCollabAdmin } from '../services/collab-access';
 
 function contextFromExpress(req: ExpressRequest): SystemUiContext {
   if (!req.user) throw new Error('System UI requires an authenticated user.');
@@ -14,6 +17,18 @@ function contextFromExpress(req: ExpressRequest): SystemUiContext {
 
 function routesFor(context: SystemUiContext, req: ExpressRequest): RouteObject[] {
   return [{ path: '/', element: <SystemShell />, loader: () => ({ context }), errorElement: <SystemRouteError />, children: [
+    { path: 'collab-admins', element: <SystemCollabAdminsPage />, errorElement: <SystemRouteError />, loader: async () => {
+      const { rows: grants } = await db.query("SELECT username, granted_by FROM roster_role_grants WHERE role = 'collab-admins' ORDER BY username");
+      const { rows: users } = await db.query('SELECT username FROM users WHERE NOT disabled ORDER BY username');
+      return { grants, users, self: context.user.username };
+    }, action: async ({ request }) => {
+      const form = await request.formData();
+      const intent = String(form.get('intent'));
+      if (!['grant', 'revoke'].includes(intent)) throw data('Invalid collaborator administrator action.', { status: 400 });
+      try { await setCollabAdmin(context.user, String(form.get('username') ?? ''), intent === 'grant'); }
+      catch (error) { throw data(error instanceof Error ? error.message : 'Grant could not be saved.', { status: 400 }); }
+      return redirect('/collab-admins');
+    } },
     { index: true, loader: () => redirect('/local-admins') },
     { path: 'local-admins', element: <SystemLocalAdminsPage />, errorElement: <SystemRouteError />, loader: async () => ({ admins: await listLocalAdmins(), context }), action: async ({ request }) => {
       const form = await request.formData(); const intent = String(form.get('intent') ?? ''); const id = Number(form.get('id'));

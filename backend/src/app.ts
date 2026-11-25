@@ -18,6 +18,7 @@ import { createReactSystemRouter } from './ui/system-router';
 import { retireLegacyOrgUi, retireLegacySystemUi } from './ui/legacy-redirects';
 import { githubWebhookRouter } from './integrations/webhooks';
 import { slackConnectRouter } from './routes/slack-connect';
+import { createCollabRouter } from './ui/collab';
 
 export interface CreateAppOptions {
   // Tests can supply a user without standing up an OIDC issuer. This hook is
@@ -92,6 +93,7 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
   app.use('/', authRouter);
   app.use('/connect/slack', slackConnectRouter());
   app.use('/', localAuthRouter);
+  app.use('/collab-manage', createCollabRouter());
 
   // ── Root: redirect to primary org or org selector ─────────────────
   app.get('/', (req: Request, res: Response) => {
