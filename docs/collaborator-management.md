@@ -160,29 +160,23 @@ do not turn creation into a field-scoped authorization rule.
 The infrastructure change declares the service account, role, permissions, API
 token, and secret write-back at
 `secret/krg-prod/authentik-managed/roster-invitations` (`url`, `brand_id`, `token`).
-Apply that Authentik change **before** wiring the new secret into the shared
-OpenBao runtime renderer. Then extend its existing backend environment template
-with those three fields and restart the backend through the normal deployment.
-The renderer is deliberately not changed in this patch: referencing an unseeded
-path would fail the shared agent and affect other services. Until runtime
-configuration is supplied, authorized users see a configuration error on the
-new page; other roster features continue to work.
+Infrastructure PR #644 includes the runtime wiring and deployment order. Merge
+roster PR #88 first, then the infrastructure PR. The normal fleet deploy creates
+an empty secret path with CAS=0 before the shared renderer runs, provisions the
+actual token in Authentik's configuration phase, and rerenders it into the
+root-only `/run/krg/roster/invitations.env`. Compose reads this file in raw mode.
+No manual token creation or follow-up template change is needed.
 
-The environment-template addition, after that path has been seeded, is:
+The deployment then requires a clean roster `main` checkout, fast-forwards it to
+the merged main, builds/reloads the backend, compares the running credentials to
+the rendered file without logging them, and checks the live catalog read. It
+fails rather than overwriting local source changes or accepting stale
+credentials. The API settings are temporarily blank only during the first
+pre-Authentik render; existing required roster secrets remain fail-closed.
 
-```text
-{{ with secret "secret/data/krg-prod/authentik-managed/roster-invitations" }}
-AUTHENTIK_URL={{ .Data.data.url }}
-AUTHENTIK_BRAND_ID={{ .Data.data.brand_id }}
-AUTHENTIK_API_TOKEN={{ .Data.data.token }}
-{{ end }}
-```
-
-Place this in the existing `/run/krg/roster/backend.env` render in
-`nix/hosts/krg-prod/default.nix`; keep the existing root-only permissions and raw
-Compose env-file loading. Do not copy the token into a checkout `.env`, browser
-code, PR body, or logs. This is a separate staged infrastructure change after
-the service-account permission checks below, not a live hand edit.
+For the complete sequence and recovery notes, see
+[the infrastructure runbook](https://github.com/KastnerRG/krg-infra/blob/main/docs/roster-collaborator-api.md)
+(available on main once PR #644 merges).
 
 The infrastructure repository records historical failures of Authentik's RBAC
 assignment endpoints in `terraform/authentik/proxmox_ldap.tf`. Validate role
